@@ -1,0 +1,212 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f1f5f9;
+  color: #1e293b;
+  min-height: 100vh;
+}
+
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ── Header ──────────────────────────────────────────── */
+.header {
+  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  color: white;
+  padding: 0.7rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-brand { display: flex; align-items: center; gap: 0.5rem; }
+.brand-icon   { font-size: 1.1rem; }
+.brand-name   { font-size: 1rem; font-weight: 700; }
+
+.header-nav { display: flex; gap: 0.25rem; }
+.nav-tab {
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.15s, background 0.15s;
+}
+.nav-tab:hover  { opacity: 1; background: rgba(255,255,255,0.12); }
+.nav-tab.active { opacity: 1; background: rgba(255,255,255,0.2); font-weight: 600; }
+
+/* ── Alert bar ───────────────────────────────────────── */
+.alert-bar {
+  background: #fffbeb;
+  border-bottom: 1px solid #fcd34d;
+  padding: 0.55rem 1.5rem;
+  font-size: 0.85rem;
+  color: #92400e;
+}
+
+/* ── Three-column layout ─────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 210px 1fr 290px;
+  gap: 1rem;
+  padding: 1rem;
+  flex: 1;
+  align-items: start;
+}
+
+/* ── Panels ──────────────────────────────────────────── */
+.panel {
+  background: white;
+  border-radius: 10px;
+  padding: 1.2rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.panel-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 1rem;
+}
+.panel-subtitle { font-weight: 400; font-size: 0.82rem; color: #64748b; }
+
+/* ── Left panel ──────────────────────────────────────── */
+.filter-group { margin-bottom: 1rem; }
+.filter-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+.filter-select {
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: white;
+  cursor: pointer;
+  color: #1e293b;
+}
+.filter-select:focus { outline: 2px solid #2563eb; border-color: transparent; }
+
+.status-summary {
+  margin-top: 1.5rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.status-count {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.dot-critical { background: #ef4444; }
+.dot-watch    { background: #f59e0b; }
+.dot-healthy  { background: #22c55e; }
+
+/* ── Center panel — table ────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
+.rec-table { width: 100%; border-collapse: collapse; }
+
+.rec-table th {
+  background: #f8fafc;
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.rec-table td {
+  padding: 0.55rem 0.8rem;
+  font-size: 0.83rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  white-space: nowrap;
+}
+.rec-table tr:last-child td { border-bottom: none; }
+.rec-table tbody tr { cursor: pointer; transition: background 0.1s; }
+.rec-table tbody tr:hover     td { background: #f8fafc; }
+.rec-table tbody tr.row-selected td { background: #eff6ff; }
+
+.td-product { white-space: normal !important; min-width: 130px; }
+.product-name { font-weight: 600; color: #1e293b; font-size: 0.85rem; }
+.product-sku  { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
+
+/* ── Status badges ───────────────────────────────────── */
+.status-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.status-critical { background: #fee2e2; color: #dc2626; }
+.status-watch    { background: #fef3c7; color: #d97706; }
+.status-healthy  { background: #dcfce7; color: #16a34a; }
+
+/* ── Action buttons ──────────────────────────────────── */
+.action-btn {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.action-critical { background: #ef4444; color: white; }
+.action-watch    { background: #f59e0b; color: white; }
+.action-healthy  { background: #e2e8f0; color: #64748b; }
+
+/* ── Right panel — charts ────────────────────────────── */
+.forecast-section { margin-bottom: 1.5rem; }
+.chart-title {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chart-subtitle { font-weight: 400; font-size: 0.75rem; color: #64748b; }
+.chart-note     { font-size: 0.7rem; color: #94a3b8; margin-top: 0.3rem; }
+
+.empty-state {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  padding: 2.5rem 1rem;
+  line-height: 1.5;
+}
+
+/* ── Status messages ─────────────────────────────────── */
+.info-box {
+  padding: 0.7rem 1rem;
+  background: #eff6ff;
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  font-size: 0.83rem;
+  color: #1e40af;
+  margin-bottom: 1rem;
+}
+.error-box {
+  padding: 0.7rem 1rem;
+  background: #fee2e2;
+  border-left: 3px solid #dc2626;
+  border-radius: 6px;
+  font-size: 0.83rem;
+  color: #b91c1c;
+  margin-bottom: 1rem;
+}

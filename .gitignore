@@ -1,0 +1,62 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+*.egg
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Trained models (too large for Git — retrain via CI/CD) ───────────────────
+models/*.pkl
+# Keep results summary
+!models/results.csv
+
+# ── Data (raw CSVs — too large or proprietary; download separately) ──────────
+data/raw/
+data/processed/
+data/train.csv
+data/test.csv
+# Keep sample data for testing
+!data/sample/
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+dist/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+secrets.json
+
+# ── Claude Code personal settings ────────────────────────────────────────────
+.claude/
+claude.md
+CLAUDE.md
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/settings.json
+.idea/
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log
+*.tmp
+/package-lock.json

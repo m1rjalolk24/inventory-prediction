@@ -1,0 +1,28 @@
+# Core ML & Data (Python 3.13 compatible — no pinned versions)
+pandas
+numpy
+scikit-learn
+statsmodels
+pmdarima
+
+# Visualization
+matplotlib
+seaborn
+plotly
+
+# Jupyter
+jupyter
+ipykernel
+
+# API
+flask
+flask-cors
+
+# Database (Phase 2)
+psycopg2-binary
+sqlalchemy
+
+# Utilities
+python-dotenv
+joblib
+tqdm
