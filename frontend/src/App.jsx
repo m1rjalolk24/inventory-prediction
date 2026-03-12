@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ComposedChart, Area,
@@ -51,9 +51,8 @@ const CATEGORIES = ['All', ...Object.keys(ITEM_CATEGORIES_MAP)]
 
 const itemLabel = id => ITEM_NAMES[id] ?? `Item ${id}`
 
-// Deterministic simulated stock so it doesn't flicker between renders
 const simulateStock = (item, store, avgDaily) => {
-  const days = ((item * 17 + store * 31) % 9) + 2   // 2–10 days of stock on hand
+  const days = ((item * 17 + store * 31) % 9) + 2
   return Math.round(avgDaily * days)
 }
 
@@ -78,6 +77,7 @@ async function apiFetch(path, options) {
 export default function App() {
   const [store,        setStore]        = useState(1)
   const [category,     setCategory]     = useState('All')
+  const [statusFilter, setStatusFilter] = useState(null)   // null | 'Critical' | 'Watch' | 'Healthy'
   const [rawRecs,      setRawRecs]      = useState(null)
   const [recsLoading,  setRecsLoading]  = useState(false)
   const [recsError,    setRecsError]    = useState(null)
@@ -85,8 +85,8 @@ export default function App() {
   const [forecast7,    setForecast7]    = useState(null)
   const [forecast30,   setForecast30]   = useState(null)
   const [fcastLoading, setFcastLoading] = useState(false)
+  const tableRef = useRef(null)
 
-  // Enrich raw API recs with computed fields
   const recs = rawRecs?.map(r => {
     const currentStock = simulateStock(r.item, store, r.avg_daily_demand)
     return {
@@ -98,11 +98,18 @@ export default function App() {
     }
   })
 
-  const filteredRecs = !recs ? null
-    : category === 'All' ? recs
-    : recs.filter(r => r.category === category)
+  const filteredRecs = !recs ? null : recs.filter(r =>
+    (category === 'All'   || r.category === category) &&
+    (!statusFilter        || r.status   === statusFilter)
+  )
 
   const criticalCount = recs?.filter(r => r.status === 'Critical').length ?? 0
+
+  const handleAlertClick = () => {
+    setStatusFilter('Critical')
+    setCategory('All')
+    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
 
   const loadRecs = useCallback(async (s) => {
     setRecsLoading(true)
@@ -111,6 +118,7 @@ export default function App() {
     setSelectedItem(null)
     setForecast7(null)
     setForecast30(null)
+    setStatusFilter(null)
     try {
       const data = await apiFetch(`/api/v1/recommendations?store=${s}`)
       setRawRecs(data.recommendations)
@@ -144,14 +152,11 @@ export default function App() {
           date:     d.date,
           forecast: d.forecast,
           lower:    Math.round(d.forecast * 0.85),
-          band:     Math.round(d.forecast * 0.30), // stacked on top of lower → upper
+          band:     Math.round(d.forecast * 0.30),
         }))
       )
-    } catch (_) {
-      // forecast errors are non-critical; panel stays empty
-    } finally {
-      setFcastLoading(false)
-    }
+    } catch (_) {}
+    finally { setFcastLoading(false) }
   }, [])
 
   useEffect(() => { loadRecs(store) }, [store, loadRecs])
@@ -172,16 +177,19 @@ export default function App() {
         </div>
         <nav className="header-nav">
           <span className="nav-tab active">Dashboard</span>
-          <span className="nav-tab">Data Management</span>
-          <span className="nav-tab">Admin Panel</span>
+          <span className="nav-tab nav-tab-disabled" title="Coming soon">Data Management</span>
+          <span className="nav-tab nav-tab-disabled" title="Coming soon">Admin Panel</span>
         </nav>
       </header>
 
       {/* ── Alert bar ── */}
       {criticalCount > 0 && (
         <div className="alert-bar">
-          ⚠️ <strong>Action Required:</strong> {criticalCount} item{criticalCount !== 1 ? 's' : ''} critically
-          low in Store #{store} based on latest 7-day forecast.
+          ⚠️ <strong>Action Required:</strong>{' '}
+          <button className="alert-link" onClick={handleAlertClick}>
+            {criticalCount} item{criticalCount !== 1 ? 's' : ''}
+          </button>
+          {' '}critically low in Store #{store} based on latest 7-day forecast.
         </div>
       )}
 
@@ -197,7 +205,7 @@ export default function App() {
             <select
               className="filter-select"
               value={store}
-              onChange={e => setStore(+e.target.value)}
+              onChange={e => { setStore(+e.target.value); setStatusFilter(null) }}
             >
               {STORES.map(s => <option key={s} value={s}>#{s} — Store {s}</option>)}
             </select>
@@ -216,31 +224,51 @@ export default function App() {
 
           {recs && (
             <div className="status-summary">
+              <p className="filter-label" style={{ marginBottom: '0.5rem' }}>Status</p>
               {[
                 { key: 'Critical', cls: 'critical' },
                 { key: 'Watch',    cls: 'watch'    },
                 { key: 'Healthy',  cls: 'healthy'  },
               ].map(({ key, cls }) => (
-                <div key={key} className="status-count">
+                <button
+                  key={key}
+                  className={`status-count ${statusFilter === key ? 'status-count-active' : ''}`}
+                  onClick={() => setStatusFilter(statusFilter === key ? null : key)}
+                >
                   <span className={`dot dot-${cls}`} />
                   <span>{recs.filter(r => r.status === key).length} {key}</span>
-                </div>
+                </button>
               ))}
+              {statusFilter && (
+                <button className="clear-filter" onClick={() => setStatusFilter(null)}>
+                  × Clear filter
+                </button>
+              )}
             </div>
           )}
         </aside>
 
         {/* CENTER — Action table */}
-        <main className="panel panel-center">
-          <h3 className="panel-title">
-            Inventory Action Center
-            <span className="panel-subtitle"> — Recommended Restock Actions (Next 7 Days)</span>
-          </h3>
+        <main className="panel panel-center" ref={tableRef}>
+          <div className="center-header">
+            <h3 className="panel-title" style={{ marginBottom: 0 }}>
+              Inventory Action Center
+              <span className="panel-subtitle"> — Restock Actions (Next 7 Days)</span>
+            </h3>
+            {statusFilter && (
+              <span className="filter-chip">
+                {statusFilter}
+                <button onClick={() => setStatusFilter(null)}>×</button>
+              </span>
+            )}
+          </div>
 
           {recsLoading && (
-            <div className="info-box">Loading recommendations… (first request ~30 s while features build)</div>
+            <div className="info-box" style={{ marginTop: '1rem' }}>
+              Loading recommendations… (first request ~30 s while features build)
+            </div>
           )}
-          {recsError && <div className="error-box">Error: {recsError}</div>}
+          {recsError && <div className="error-box" style={{ marginTop: '1rem' }}>Error: {recsError}</div>}
 
           {filteredRecs && (
             <div className="table-wrap">
@@ -279,14 +307,10 @@ export default function App() {
                       <td>{r.reorder_point} units</td>
                       <td>
                         {r.status === 'Critical' && (
-                          <span className="action-btn action-critical">
-                            +{r.order_quantity} Order Now
-                          </span>
+                          <span className="action-btn action-critical">+{r.order_quantity} Order Now</span>
                         )}
                         {r.status === 'Watch' && (
-                          <span className="action-btn action-watch">
-                            +{Math.round(r.order_quantity * 0.5)} Monitor
-                          </span>
+                          <span className="action-btn action-watch">+{Math.round(r.order_quantity * 0.5)} Monitor</span>
                         )}
                         {r.status === 'Healthy' && (
                           <span className="action-btn action-healthy">No Action Needed</span>
@@ -322,10 +346,8 @@ export default function App() {
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={v => [`${v} units`, 'Forecast']} labelFormatter={l => `Date: ${l}`} />
-                  <Line
-                    type="monotone" dataKey="forecast" name="Forecast"
-                    stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: '#2563eb' }}
-                  />
+                  <Line type="monotone" dataKey="forecast" name="Forecast"
+                    stroke="#6366f1" strokeWidth={2} dot={{ r: 3, fill: '#6366f1' }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -340,11 +362,10 @@ export default function App() {
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} interval={6} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={v => [`${v} units`]} />
-                  {/* Confidence band: transparent base + shaded band stacked on it */}
                   <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="transparent" />
-                  <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#dbeafe" name="±15% band" />
+                  <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±15% band" />
                   <Line type="monotone" dataKey="forecast" name="Forecast"
-                    stroke="#2563eb" strokeWidth={2} dot={false} />
+                    stroke="#6366f1" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
               <p className="chart-note">Shaded area shows ±15% forecast confidence band.</p>
