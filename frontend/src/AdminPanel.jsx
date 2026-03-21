@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 
 const MODELS = [
-  { id: 'random_forest',      label: 'Random Forest',      desc: 'Best overall accuracy — recommended' },
-  { id: 'linear_regression',  label: 'Linear Regression',  desc: 'Baseline — fast, interpretable'       },
+  { id: 'random_forest',      label: 'Random Forest',      desc: 'Best overall accuracy — recommended',               disabled: false },
+  { id: 'linear_regression',  label: 'Linear Regression',  desc: 'Baseline — fast, interpretable',                    disabled: false },
+  { id: 'arima',              label: 'ARIMA',              desc: 'Notebook only — not available for live serving',     disabled: true  },
 ]
 
 const METRIC_LABELS = {
@@ -104,19 +105,22 @@ export default function AdminPanel({ activeModel, onModelChange }) {
             {MODELS.map(m => (
               <label
                 key={m.id}
-                className={`model-option ${activeModel === m.id ? 'model-option-active' : ''}`}
+                className={`model-option ${activeModel === m.id ? 'model-option-active' : ''} ${m.disabled ? 'model-option-disabled' : ''}`}
+                title={m.disabled ? 'Notebook only — not available for live serving' : undefined}
               >
                 <input
                   type="radio"
                   name="activeModel"
                   value={m.id}
                   checked={activeModel === m.id}
-                  onChange={() => onModelChange(m.id)}
+                  disabled={m.disabled}
+                  onChange={() => !m.disabled && onModelChange(m.id)}
                 />
                 <div className="model-option-body">
                   <div className="model-option-name">
                     {m.label}
                     {bestModel === m.id && <span className="model-best-tag">Best</span>}
+                    {m.disabled && <span className="model-disabled-tag">Offline only</span>}
                   </div>
                   <div className="model-option-desc">{m.desc}</div>
                 </div>

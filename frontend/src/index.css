@@ -555,6 +555,18 @@ body {
 .model-option-name   { font-size: 0.85rem; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 0.4rem; }
 .model-option-desc   { font-size: 0.76rem; color: #6b7280; }
 
+.model-option-disabled         { opacity: 0.5; cursor: not-allowed; }
+.model-option-disabled:hover   { border-color: #e5e7eb; background: #fff; }
+
+.model-disabled-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #f3f4f6;
+  color: #6b7280;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
 .model-best-tag {
   font-size: 0.65rem;
   font-weight: 700;
