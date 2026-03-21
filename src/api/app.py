@@ -265,7 +265,8 @@ def run_ingest():
         if not TRAIN_CSV.exists():
             return jsonify({"error": "train.csv not found"}), 404
 
-        df = pd.read_csv(TRAIN_CSV, parse_dates=["date"])
+        df = pd.read_csv(TRAIN_CSV)
+        df["date"] = pd.to_datetime(df["date"])
         last_date = df["date"].max()
         next_date = last_date + pd.Timedelta(days=1)
 
