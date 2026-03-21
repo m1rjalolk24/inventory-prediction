@@ -1,7 +1,6 @@
 #!/bin/bash
 # =============================================================================
 # Korzinka Inventory — One-time Azure VM Setup
-# Run this ONCE as the default azure user (azureuser) after creating the VM.
 # =============================================================================
 set -e
 
