@@ -43,10 +43,10 @@ dist/
 *.env
 secrets.json
 
-# ── Claude Code personal settings ────────────────────────────────────────────
-.claude/
-claude.md
-CLAUDE.md
+# ── Database files ────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+
 
 # ── OS / Editor ───────────────────────────────────────────────────────────────
 .DS_Store

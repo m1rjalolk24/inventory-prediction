@@ -2,14 +2,19 @@
 Flask API for Korzinka Inventory Forecasting System.
 
 Endpoints:
-  GET  /health                      - Health check
-  GET  /api/v1/stores               - List available stores
-  GET  /api/v1/items                - List available items
-  POST /api/v1/forecast             - Get demand forecast
-  GET  /api/v1/recommendations      - Get reorder recommendations
-  GET  /api/v1/metrics              - Model performance metrics
+  GET    /health                      - Health check
+  GET    /api/v1/stores               - List available stores
+  GET    /api/v1/items                - List available items
+  POST   /api/v1/forecast             - Get demand forecast
+  GET    /api/v1/recommendations      - Get reorder recommendations
+  GET    /api/v1/metrics              - Model performance metrics
+  GET    /api/v1/products             - List all products
+  POST   /api/v1/products             - Create product
+  PUT    /api/v1/products/<id>        - Update product
+  DELETE /api/v1/products/<id>        - Delete product
 """
 
+import sys
 import logging
 import numpy as np
 import pandas as pd
@@ -17,11 +22,18 @@ from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+# Allow importing database.py from the same directory when run directly
+sys.path.insert(0, str(Path(__file__).parent))
+from database import SessionLocal, Product, init_db
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# Initialise DB + seed products on startup
+init_db()
 
 ROOT = Path(__file__).parents[2]
 MODELS_DIR = ROOT / "models"
@@ -237,6 +249,80 @@ def metrics():
         return jsonify({"message": "No results found. Run full_pipeline.ipynb first."}), 404
     df = pd.read_csv(path, index_col="model")
     return jsonify({"metrics": df.to_dict(orient="index")})
+
+
+# ---------------------------------------------------------------------------
+# Products CRUD
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/products")
+def get_products():
+    db = SessionLocal()
+    try:
+        products = (db.query(Product)
+                      .order_by(Product.item_id)
+                      .all())
+        return jsonify({"products": [p.to_dict() for p in products]})
+    finally:
+        db.close()
+
+
+@app.post("/api/v1/products")
+def create_product():
+    data = request.get_json(force=True)
+    required = ("item_id", "name", "category")
+    if not all(data.get(f) for f in required):
+        return jsonify({"error": "item_id, name and category are required"}), 400
+    db = SessionLocal()
+    try:
+        if db.query(Product).filter_by(item_id=data["item_id"]).first():
+            return jsonify({"error": f"item_id {data['item_id']} already exists"}), 409
+        p = Product(
+            item_id   = int(data["item_id"]),
+            name      = data["name"].strip(),
+            category  = data["category"].strip(),
+            sku       = data.get("sku", "").strip(),
+            is_active = True,
+        )
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        return jsonify({"product": p.to_dict()}), 201
+    finally:
+        db.close()
+
+
+@app.put("/api/v1/products/<int:product_id>")
+def update_product(product_id):
+    data = request.get_json(force=True)
+    db = SessionLocal()
+    try:
+        p = db.query(Product).filter_by(id=product_id).first()
+        if not p:
+            return jsonify({"error": "Product not found"}), 404
+        if "name"      in data: p.name      = data["name"].strip()
+        if "category"  in data: p.category  = data["category"].strip()
+        if "sku"       in data: p.sku       = data["sku"].strip()
+        if "is_active" in data: p.is_active = bool(data["is_active"])
+        db.commit()
+        db.refresh(p)
+        return jsonify({"product": p.to_dict()})
+    finally:
+        db.close()
+
+
+@app.delete("/api/v1/products/<int:product_id>")
+def delete_product(product_id):
+    db = SessionLocal()
+    try:
+        p = db.query(Product).filter_by(id=product_id).first()
+        if not p:
+            return jsonify({"error": "Product not found"}), 404
+        db.delete(p)
+        db.commit()
+        return jsonify({"message": "Deleted"})
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------

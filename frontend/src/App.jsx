@@ -3,53 +3,44 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ComposedChart, Area,
 } from 'recharts'
+import DataManagement from './DataManagement'
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
 // ---------------------------------------------------------------------------
 const STORES = Array.from({ length: 10 }, (_, i) => i + 1)
 
-const ITEM_NAMES = {
-   1: 'Tomatoes',           2: 'Potatoes',           3: 'Onions',
-   4: 'Carrots',            5: 'Cucumbers',           6: 'White Bread',
-   7: 'Whole Wheat Bread',  8: 'Milk (1L)',            9: 'Yogurt',
-  10: 'Butter',            11: 'Eggs (12-pack)',      12: 'Chicken Breast',
-  13: 'Beef Mince',         14: 'Lamb',               15: 'Rice (5kg)',
-  16: 'Flour (2kg)',        17: 'Sugar (1kg)',         18: 'Sunflower Oil (1L)',
-  19: 'Pasta',              20: 'Instant Noodles',    21: 'Water (1.5L)',
-  22: 'Carbonated Drinks',  23: 'Orange Juice',       24: 'Tea (100g)',
-  25: 'Instant Coffee',     26: 'Sliced Cheese',      27: 'Sour Cream',
-  28: 'Kefir',              29: 'Ice Cream',          30: 'Frozen Vegetables',
-  31: 'Canned Tomatoes',    32: 'Ketchup',            33: 'Mayonnaise',
-  34: 'Salt (1kg)',          35: 'Black Pepper',       36: 'Chips',
-  37: 'Chocolate Bar',      38: 'Cookies',            39: 'Candy',
-  40: 'Chewing Gum',        41: 'Laundry Detergent',  42: 'Dish Soap',
-  43: 'Toilet Paper',       44: 'Shampoo',            45: 'Toothpaste',
-  46: 'Wet Wipes',          47: 'Diapers',            48: 'Bananas',
-  49: 'Apples',             50: 'Watermelon',
+// Products come from the DB; this is a fallback while loading
+const FALLBACK_NAMES = { 1:'Tomatoes',2:'Potatoes',3:'Onions',4:'Carrots',5:'Cucumbers',
+  6:'White Bread',7:'Whole Wheat Bread',8:'Milk (1L)',9:'Yogurt',10:'Butter',
+  11:'Eggs (12-pack)',12:'Chicken Breast',13:'Beef Mince',14:'Lamb',15:'Rice (5kg)',
+  16:'Flour (2kg)',17:'Sugar (1kg)',18:'Sunflower Oil (1L)',19:'Pasta',20:'Instant Noodles',
+  21:'Water (1.5L)',22:'Carbonated Drinks',23:'Orange Juice',24:'Tea (100g)',25:'Instant Coffee',
+  26:'Sliced Cheese',27:'Sour Cream',28:'Kefir',29:'Ice Cream',30:'Frozen Vegetables',
+  31:'Canned Tomatoes',32:'Ketchup',33:'Mayonnaise',34:'Salt (1kg)',35:'Black Pepper',
+  36:'Chips',37:'Chocolate Bar',38:'Cookies',39:'Candy',40:'Chewing Gum',
+  41:'Laundry Detergent',42:'Dish Soap',43:'Toilet Paper',44:'Shampoo',45:'Toothpaste',
+  46:'Wet Wipes',47:'Diapers',48:'Bananas',49:'Apples',50:'Watermelon',
 }
 
-const ITEM_CATEGORIES_MAP = {
-  'Fresh Produce':   [1, 2, 3, 4, 5, 48, 49, 50],
-  'Dairy & Eggs':    [8, 9, 10, 11, 26, 27, 28, 29],
-  'Bakery':          [6, 7],
-  'Meat & Poultry':  [12, 13, 14],
-  'Staples':         [15, 16, 17, 18, 19, 20, 34],
-  'Beverages':       [21, 22, 23, 24, 25],
-  'Snacks & Sweets': [36, 37, 38, 39, 40],
-  'Household':       [41, 42, 43, 44, 45, 46, 47],
-  'Frozen & Canned': [30, 31],
-  'Condiments':      [32, 33, 35],
+function exportRecsCSV(recs, store) {
+  const header = ['Product', 'Item ID', 'Category', 'Status', 'Current Stock',
+                  '7-Day Forecast', 'Reorder Point', 'Recommended Action']
+  const rows = recs.map(r => {
+    const action = r.status === 'Critical' ? `+${r.order_quantity} Order Now`
+                 : r.status === 'Watch'    ? `+${Math.round(r.order_quantity * 0.5)} Monitor`
+                 : 'No Action Needed'
+    return [r.name, r.item, r.category, r.status,
+            r.currentStock, r.forecast_7d, r.reorder_point, action]
+  })
+  const csv  = [header, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url  = URL.createObjectURL(blob)
+  const a    = Object.assign(document.createElement('a'),
+               { href: url, download: `recommendations_store${store}.csv` })
+  a.click()
+  URL.revokeObjectURL(url)
 }
-
-const ITEM_CATEGORY = {}
-Object.entries(ITEM_CATEGORIES_MAP).forEach(([cat, ids]) =>
-  ids.forEach(id => (ITEM_CATEGORY[id] = cat))
-)
-
-const CATEGORIES = ['All', ...Object.keys(ITEM_CATEGORIES_MAP)]
-
-const itemLabel = id => ITEM_NAMES[id] ?? `Item ${id}`
 
 const simulateStock = (item, store, avgDaily) => {
   const days = ((item * 17 + store * 31) % 9) + 2
@@ -75,9 +66,10 @@ async function apiFetch(path, options) {
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
+  const [activeTab,    setActiveTab]    = useState('dashboard')
   const [store,        setStore]        = useState(1)
   const [category,     setCategory]     = useState('All')
-  const [statusFilter, setStatusFilter] = useState(null)   // null | 'Critical' | 'Watch' | 'Healthy'
+  const [statusFilter, setStatusFilter] = useState(null)
   const [rawRecs,      setRawRecs]      = useState(null)
   const [recsLoading,  setRecsLoading]  = useState(false)
   const [recsError,    setRecsError]    = useState(null)
@@ -85,7 +77,25 @@ export default function App() {
   const [forecast7,    setForecast7]    = useState(null)
   const [forecast30,   setForecast30]   = useState(null)
   const [fcastLoading, setFcastLoading] = useState(false)
+  const [dbProducts,   setDbProducts]   = useState({})   // item_id → {name, category}
   const tableRef = useRef(null)
+
+  // Fetch product list from DB on mount
+  useEffect(() => {
+    fetch('/api/v1/products')
+      .then(r => r.json())
+      .then(data => {
+        const map = {}
+        data.products?.forEach(p => { map[p.item_id] = p })
+        setDbProducts(map)
+      })
+      .catch(() => {})   // fallback to FALLBACK_NAMES silently
+  }, [])
+
+  const itemLabel  = id => dbProducts[id]?.name     ?? FALLBACK_NAMES[id] ?? `Item ${id}`
+  const itemCat    = id => dbProducts[id]?.category ?? 'Other'
+  const categories = ['All', ...new Set(Object.values(dbProducts).map(p => p.category)
+    .filter(Boolean).sort())]
 
   const recs = rawRecs?.map(r => {
     const currentStock = simulateStock(r.item, store, r.avg_daily_demand)
@@ -94,7 +104,7 @@ export default function App() {
       name:         itemLabel(r.item),
       currentStock,
       status:       getStatus(currentStock, r.reorder_point),
-      category:     ITEM_CATEGORY[r.item] ?? 'Other',
+      category:     itemCat(r.item),
     }
   })
 
@@ -173,14 +183,27 @@ export default function App() {
       <header className="header">
         <div className="header-brand">
           <span className="brand-icon">🛒</span>
-          <span className="brand-name">Korzinka Inventory AI</span>
+          <span className="brand-name">Inventory Manager</span>
         </div>
         <nav className="header-nav">
-          <span className="nav-tab active">Dashboard</span>
-          <span className="nav-tab nav-tab-disabled" title="Coming soon">Data Management</span>
+          {[
+            { id: 'dashboard',        label: 'Dashboard'        },
+            { id: 'data-management',  label: 'Data Management'  },
+          ].map(t => (
+            <span key={t.id}
+              className={`nav-tab ${activeTab === t.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.id)}>
+              {t.label}
+            </span>
+          ))}
           <span className="nav-tab nav-tab-disabled" title="Coming soon">Admin Panel</span>
         </nav>
       </header>
+
+      {/* ── Data Management tab ── */}
+      {activeTab === 'data-management' && <DataManagement />}
+
+      {activeTab === 'dashboard' && <>
 
       {/* ── Alert bar ── */}
       {criticalCount > 0 && (
@@ -218,7 +241,7 @@ export default function App() {
               value={category}
               onChange={e => setCategory(e.target.value)}
             >
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
@@ -260,6 +283,13 @@ export default function App() {
                 {statusFilter}
                 <button onClick={() => setStatusFilter(null)}>×</button>
               </span>
+            )}
+            {filteredRecs?.length > 0 && (
+              <button className="btn btn-ghost btn-sm"
+                onClick={() => exportRecsCSV(filteredRecs, store)}
+                style={{ marginLeft: 'auto' }}>
+                ↓ Export CSV
+              </button>
             )}
           </div>
 
@@ -374,6 +404,7 @@ export default function App() {
         </aside>
 
       </div>
+      </>}
     </div>
   )
 }
