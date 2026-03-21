@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, ComposedChart, Area,
 } from 'recharts'
 import DataManagement from './DataManagement'
+import AdminPanel from './AdminPanel'
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -67,6 +68,7 @@ async function apiFetch(path, options) {
 // ---------------------------------------------------------------------------
 export default function App() {
   const [activeTab,    setActiveTab]    = useState('dashboard')
+  const [activeModel,  setActiveModel]  = useState('random_forest')
   const [store,        setStore]        = useState(1)
   const [category,     setCategory]     = useState('All')
   const [statusFilter, setStatusFilter] = useState(null)
@@ -148,12 +150,12 @@ export default function App() {
         apiFetch('/api/v1/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store: s, item, horizon_days: 7,  model: 'random_forest' }),
+          body: JSON.stringify({ store: s, item, horizon_days: 7,  model: activeModel }),
         }),
         apiFetch('/api/v1/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store: s, item, horizon_days: 30, model: 'random_forest' }),
+          body: JSON.stringify({ store: s, item, horizon_days: 30, model: activeModel }),
         }),
       ])
       setForecast7(d7.forecast)
@@ -167,7 +169,7 @@ export default function App() {
       )
     } catch (_) {}
     finally { setFcastLoading(false) }
-  }, [])
+  }, [activeModel])
 
   useEffect(() => { loadRecs(store) }, [store, loadRecs])
 
@@ -189,6 +191,7 @@ export default function App() {
           {[
             { id: 'dashboard',        label: 'Dashboard'        },
             { id: 'data-management',  label: 'Data Management'  },
+            { id: 'admin',            label: 'Admin Panel'      },
           ].map(t => (
             <span key={t.id}
               className={`nav-tab ${activeTab === t.id ? 'active' : ''}`}
@@ -196,12 +199,16 @@ export default function App() {
               {t.label}
             </span>
           ))}
-          <span className="nav-tab nav-tab-disabled" title="Coming soon">Admin Panel</span>
         </nav>
       </header>
 
       {/* ── Data Management tab ── */}
       {activeTab === 'data-management' && <DataManagement />}
+
+      {/* ── Admin Panel tab ── */}
+      {activeTab === 'admin' && (
+        <AdminPanel activeModel={activeModel} onModelChange={setActiveModel} />
+      )}
 
       {activeTab === 'dashboard' && <>
 
