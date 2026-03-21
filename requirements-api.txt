@@ -1,0 +1,13 @@
+# Minimal requirements for the Flask API (no Jupyter/visualization)
+pandas
+numpy
+scikit-learn
+statsmodels
+pmdarima
+flask
+flask-cors
+psycopg2-binary
+sqlalchemy
+python-dotenv
+joblib
+tqdm
