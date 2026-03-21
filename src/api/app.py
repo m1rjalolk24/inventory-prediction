@@ -97,7 +97,8 @@ def _get_features() -> pd.DataFrame:
         if not TRAIN_CSV.exists():
             raise FileNotFoundError(f"Training data not found: {TRAIN_CSV}")
         logger.info("Building feature matrix from train.csv (first request only)...")
-        raw = pd.read_csv(TRAIN_CSV, parse_dates=["date"])
+        raw = pd.read_csv(TRAIN_CSV)
+        raw["date"] = pd.to_datetime(raw["date"].astype(str).str[:10], format="%Y-%m-%d")
         _feature_df = build_features(raw)
         logger.info(f"Feature matrix ready: {_feature_df.shape}")
     return _feature_df
@@ -266,7 +267,7 @@ def run_ingest():
             return jsonify({"error": "train.csv not found"}), 404
 
         df = pd.read_csv(TRAIN_CSV)
-        df["date"] = pd.to_datetime(df["date"], format="mixed")
+        df["date"] = pd.to_datetime(df["date"].astype(str).str[:10], format="%Y-%m-%d")
         today = pd.Timestamp.today().normalize()
 
         rows = []
@@ -304,7 +305,8 @@ def _do_retrain():
 
     try:
         _retrain_status.update({"state": "running", "message": "Building feature matrix…"})
-        raw = pd.read_csv(TRAIN_CSV, parse_dates=["date"])
+        raw = pd.read_csv(TRAIN_CSV)
+        raw["date"] = pd.to_datetime(raw["date"].astype(str).str[:10], format="%Y-%m-%d")
         feat_df = build_features(raw)
 
         _retrain_status["message"] = f"Training on {len(feat_df):,} rows…"
