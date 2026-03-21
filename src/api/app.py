@@ -266,17 +266,16 @@ def run_ingest():
             return jsonify({"error": "train.csv not found"}), 404
 
         df = pd.read_csv(TRAIN_CSV)
-        df["date"] = pd.to_datetime(df["date"])
-        last_date = df["date"].max()
-        next_date = last_date + pd.Timedelta(days=1)
+        df["date"] = pd.to_datetime(df["date"], format="mixed")
+        today = pd.Timestamp.today().normalize()
 
         rows = []
         for (store, item), group in df.groupby(["store", "item"]):
-            weekday = next_date.weekday()
+            weekday = today.weekday()
             same_weekday = group[group["date"].dt.weekday == weekday]["sales"]
             base = same_weekday.mean() if len(same_weekday) > 0 else group["sales"].mean()
             sales = max(0, round(float(base) * np.random.uniform(0.9, 1.1)))
-            rows.append({"date": next_date.date(), "store": store, "item": item, "sales": sales})
+            rows.append({"date": today.date(), "store": store, "item": item, "sales": sales})
 
         df_new = pd.DataFrame(rows)
         df_combined = pd.concat([df, df_new], ignore_index=True)
@@ -285,11 +284,11 @@ def run_ingest():
 
         global _feature_df
         _feature_df = None
-        logger.info(f"Ingest: added {len(df_new)} rows for {next_date.date()}")
+        logger.info(f"Ingest: added {len(df_new)} rows for {today.date()}")
 
         return jsonify({
-            "message": f"Ingested {len(df_new)} rows for {next_date.date()}",
-            "date": str(next_date.date()),
+            "message": f"Ingested {len(df_new)} rows for {today.date()}",
+            "date": str(today.date()),
             "rows_added": len(df_new),
             "total_rows": len(df_combined),
         })
