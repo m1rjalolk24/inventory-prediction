@@ -1,0 +1,39 @@
+name: Deploy to Azure VM
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /home/azureuser/app
+
+            echo "--- Pulling latest code ---"
+            git pull origin main
+
+            echo "--- Installing Python dependencies ---"
+            /home/azureuser/venv/bin/pip install -r requirements.txt -q
+
+            echo "--- Building React frontend ---"
+            cd frontend
+            npm install --silent
+            npm run build
+            cd ..
+
+            echo "--- Restarting API service ---"
+            sudo systemctl restart korzinka-api
+
+            echo "--- Health check ---"
+            sleep 3
+            curl -sf http://localhost:5000/health && echo "API is up"
