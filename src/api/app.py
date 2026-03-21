@@ -252,6 +252,57 @@ def metrics():
 
 
 # ---------------------------------------------------------------------------
+# Sales data upload
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/sales/upload")
+def upload_sales():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['file']
+    try:
+        df_new = pd.read_csv(file, parse_dates=['date'])
+    except Exception as e:
+        return jsonify({"error": f"Could not parse CSV: {e}"}), 400
+
+    required = {'date', 'store', 'item', 'sales'}
+    missing = required - set(df_new.columns)
+    if missing:
+        return jsonify({"error": f"Missing columns: {', '.join(sorted(missing))}"}), 400
+
+    df_new = df_new[['date', 'store', 'item', 'sales']].copy()
+    df_new['date'] = pd.to_datetime(df_new['date'])
+
+    rows_incoming = len(df_new)
+
+    if TRAIN_CSV.exists():
+        df_existing = pd.read_csv(TRAIN_CSV, parse_dates=['date'])
+        df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+    else:
+        df_combined = df_new
+
+    before = len(df_combined)
+    df_combined = df_combined.drop_duplicates(subset=['date', 'store', 'item'], keep='last')
+    df_combined = df_combined.sort_values(['store', 'item', 'date'])
+    duplicates_dropped = before - len(df_combined)
+
+    df_combined.to_csv(TRAIN_CSV, index=False, date_format='%Y-%m-%d')
+
+    # Invalidate feature cache so next forecast rebuilds from new data
+    global _feature_df
+    _feature_df = None
+    logger.info(f"Sales upload: {rows_incoming} rows in, {duplicates_dropped} duplicates dropped, {len(df_combined)} total rows")
+
+    return jsonify({
+        "message": "Upload successful. Forecast cache cleared — next request will rebuild features (~30s).",
+        "rows_uploaded": rows_incoming,
+        "duplicates_dropped": duplicates_dropped,
+        "total_rows": len(df_combined),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Products CRUD
 # ---------------------------------------------------------------------------
 

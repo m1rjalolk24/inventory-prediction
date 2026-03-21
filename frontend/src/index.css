@@ -630,3 +630,39 @@ body {
 @media (max-width: 700px) {
   .admin-row { grid-template-columns: 1fr; }
 }
+
+/* ── Sales Upload ─────────────────────────────────────── */
+.upload-header { margin-bottom: 1rem; }
+
+.upload-zone {
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.upload-zone:hover { border-color: #6366f1; background: #f5f3ff; }
+
+.upload-icon  { font-size: 2rem; color: #9ca3af; margin-bottom: 0.5rem; }
+.upload-label { font-size: 0.9rem; font-weight: 600; color: #374151; }
+.upload-hint  { font-size: 0.78rem; color: #9ca3af; margin-top: 0.25rem; font-family: monospace; }
+
+.upload-preview     { margin-top: 0.5rem; }
+.upload-file-row    { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.upload-filename    { font-size: 0.85rem; font-weight: 600; color: #111827; }
+.upload-preview-label { font-size: 0.78rem; font-weight: 600; color: #6b7280; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.upload-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 0.5rem;
+}
+.upload-success-icon   { font-size: 1.25rem; color: #16a34a; margin-top: 1px; }
+.upload-success-detail { font-size: 0.82rem; color: #374151; margin-top: 0.2rem; }
+.upload-success-note   { font-size: 0.78rem; color: #6b7280; margin-top: 0.25rem; }
