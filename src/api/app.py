@@ -15,6 +15,8 @@ Endpoints:
 """
 
 import sys
+import threading
+import datetime
 import logging
 import numpy as np
 import pandas as pd
@@ -86,6 +88,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 _feature_df = None
 _models: dict = {}
+_retrain_status: dict = {"state": "idle", "message": "", "started_at": None, "finished_at": None}
 
 
 def _get_features() -> pd.DataFrame:
@@ -249,6 +252,101 @@ def metrics():
         return jsonify({"message": "No results found. Run full_pipeline.ipynb first."}), 404
     df = pd.read_csv(path, index_col="model")
     return jsonify({"metrics": df.to_dict(orient="index")})
+
+
+# ---------------------------------------------------------------------------
+# Background jobs: daily ingest + model retrain
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/jobs/ingest")
+def run_ingest():
+    """Simulate one day of new sales and append to train.csv."""
+    try:
+        if not TRAIN_CSV.exists():
+            return jsonify({"error": "train.csv not found"}), 404
+
+        df = pd.read_csv(TRAIN_CSV, parse_dates=["date"])
+        last_date = df["date"].max()
+        next_date = last_date + pd.Timedelta(days=1)
+
+        rows = []
+        for (store, item), group in df.groupby(["store", "item"]):
+            weekday = next_date.weekday()
+            same_weekday = group[group["date"].dt.weekday == weekday]["sales"]
+            base = same_weekday.mean() if len(same_weekday) > 0 else group["sales"].mean()
+            sales = max(0, round(float(base) * np.random.uniform(0.9, 1.1)))
+            rows.append({"date": next_date.date(), "store": store, "item": item, "sales": sales})
+
+        df_new = pd.DataFrame(rows)
+        df_combined = pd.concat([df, df_new], ignore_index=True)
+        df_combined = df_combined.drop_duplicates(subset=["date", "store", "item"], keep="last")
+        df_combined.to_csv(TRAIN_CSV, index=False, date_format="%Y-%m-%d")
+
+        global _feature_df
+        _feature_df = None
+        logger.info(f"Ingest: added {len(df_new)} rows for {next_date.date()}")
+
+        return jsonify({
+            "message": f"Ingested {len(df_new)} rows for {next_date.date()}",
+            "date": str(next_date.date()),
+            "rows_added": len(df_new),
+            "total_rows": len(df_combined),
+        })
+    except Exception as e:
+        logger.exception("Ingest error")
+        return jsonify({"error": str(e)}), 500
+
+
+def _do_retrain():
+    global _feature_df, _models, _retrain_status
+    import joblib
+    from sklearn.ensemble import RandomForestRegressor
+
+    try:
+        _retrain_status.update({"state": "running", "message": "Building feature matrix…"})
+        raw = pd.read_csv(TRAIN_CSV, parse_dates=["date"])
+        feat_df = build_features(raw)
+
+        _retrain_status["message"] = f"Training on {len(feat_df):,} rows…"
+        model = RandomForestRegressor(
+            n_estimators=100, max_depth=10,
+            min_samples_leaf=4, random_state=42, n_jobs=-1,
+        )
+        model.fit(feat_df[FEATURE_COLS], feat_df["sales"])
+
+        _retrain_status["message"] = "Saving model to disk…"
+        joblib.dump(model, MODELS_DIR / "random_forest.pkl")
+
+        _models["random_forest"] = model
+        _feature_df = feat_df
+
+        _retrain_status.update({
+            "state": "done",
+            "message": f"Done — retrained on {len(feat_df):,} rows.",
+            "finished_at": datetime.datetime.now().isoformat(),
+        })
+        logger.info("Retraining complete")
+    except Exception as e:
+        _retrain_status.update({"state": "error", "message": str(e)})
+        logger.exception("Retrain error")
+
+
+@app.post("/api/v1/jobs/retrain")
+def run_retrain():
+    global _retrain_status
+    if _retrain_status.get("state") == "running":
+        return jsonify({"error": "Retraining already in progress"}), 409
+    _retrain_status = {
+        "state": "running", "message": "Starting…",
+        "started_at": datetime.datetime.now().isoformat(), "finished_at": None,
+    }
+    threading.Thread(target=_do_retrain, daemon=True).start()
+    return jsonify({"message": "Retraining started", "status": _retrain_status})
+
+
+@app.get("/api/v1/jobs/retrain/status")
+def retrain_status():
+    return jsonify(_retrain_status)
 
 
 # ---------------------------------------------------------------------------

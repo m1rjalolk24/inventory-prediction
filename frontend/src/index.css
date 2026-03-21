@@ -666,3 +666,44 @@ body {
 .upload-success-icon   { font-size: 1.25rem; color: #16a34a; margin-top: 1px; }
 .upload-success-detail { font-size: 0.82rem; color: #374151; margin-top: 0.2rem; }
 .upload-success-note   { font-size: 0.78rem; color: #6b7280; margin-top: 0.25rem; }
+
+/* ── Operations ───────────────────────────────────────── */
+.ops-row     { display: flex; flex-direction: column; gap: 0; }
+.ops-item    { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: 1rem 0; }
+.ops-divider { border: none; border-top: 1px solid #f3f4f6; margin: 0; }
+
+.ops-item-info   { flex: 1; }
+.ops-item-title  { font-size: 0.88rem; font-weight: 700; color: #111827; margin-bottom: 0.25rem; }
+.ops-item-desc   { font-size: 0.78rem; color: #6b7280; line-height: 1.5; }
+
+.ops-result         { font-size: 0.78rem; margin-top: 0.5rem; padding: 0.35rem 0.6rem; border-radius: 5px; display: flex; align-items: center; gap: 0.4rem; }
+.ops-result-ok      { background: #f0fdf4; color: #166534; }
+.ops-result-err     { background: #fef2f2; color: #991b1b; }
+.ops-result-running { background: #eff6ff; color: #1e40af; }
+
+.ops-spinner {
+  width: 10px; height: 10px;
+  border: 2px solid #93c5fd;
+  border-top-color: #1e40af;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn-warning {
+  background: #f59e0b; color: #fff;
+  border: none; border-radius: 6px;
+  padding: 0.45rem 1rem; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-warning:hover    { background: #d97706; }
+.btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.retrain-warning-list {
+  padding-left: 1.25rem;
+  font-size: 0.82rem;
+  color: #374151;
+  line-height: 1.8;
+}

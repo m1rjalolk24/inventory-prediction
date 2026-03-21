@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 const MODELS = [
   { id: 'random_forest',      label: 'Random Forest',      desc: 'Best overall accuracy — recommended',               disabled: false },
@@ -23,11 +23,60 @@ function normalizeMetrics(raw) {
   return out
 }
 
+function useRetrain() {
+  const [status,   setStatus]   = useState(null)   // retrain status object
+  const [confirm,  setConfirm]  = useState(false)
+  const pollRef = useRef(null)
+
+  const pollStatus = useCallback(() => {
+    fetch('/api/v1/jobs/retrain/status')
+      .then(r => r.json())
+      .then(data => {
+        setStatus(data)
+        if (data.state === 'running') {
+          pollRef.current = setTimeout(pollStatus, 2000)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const startRetrain = async () => {
+    setConfirm(false)
+    const res  = await fetch('/api/v1/jobs/retrain', { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) { setStatus({ state: 'error', message: data.error }); return }
+    setStatus(data.status)
+    pollRef.current = setTimeout(pollStatus, 2000)
+  }
+
+  useEffect(() => () => clearTimeout(pollRef.current), [])
+
+  return { status, confirm, setConfirm, startRetrain }
+}
+
 export default function AdminPanel({ activeModel, onModelChange }) {
   const [metrics, setMetrics]         = useState(null)
   const [metricsErr, setMetricsErr]   = useState(null)
   const [health, setHealth]           = useState(null)
   const [dataInfo, setDataInfo]       = useState(null)
+  const [ingestResult, setIngestResult] = useState(null)
+  const [ingestLoading, setIngestLoading] = useState(false)
+  const retrain = useRetrain()
+
+  const runIngest = async () => {
+    setIngestLoading(true)
+    setIngestResult(null)
+    try {
+      const res  = await fetch('/api/v1/jobs/ingest', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setIngestResult({ ok: true, ...data })
+    } catch (e) {
+      setIngestResult({ ok: false, message: e.message })
+    } finally {
+      setIngestLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/health')
@@ -131,7 +180,94 @@ export default function AdminPanel({ activeModel, onModelChange }) {
 
       </div>
 
-      {/* ── Row 2: Metrics Table ── */}
+      {/* ── Row 2: Operations ── */}
+      <div className="admin-card admin-card-full">
+        <h3 className="admin-card-title">Operations</h3>
+        <div className="ops-row">
+
+          {/* Daily Ingest */}
+          <div className="ops-item">
+            <div className="ops-item-info">
+              <div className="ops-item-title">Run Daily Ingestion</div>
+              <div className="ops-item-desc">
+                Simulates one new day of sales for all stores and items, appends to training data, and clears the forecast cache.
+              </div>
+              {ingestResult && (
+                <div className={ingestResult.ok ? 'ops-result ops-result-ok' : 'ops-result ops-result-err'}>
+                  {ingestResult.ok
+                    ? `✓ ${ingestResult.message} · ${ingestResult.total_rows?.toLocaleString()} total rows`
+                    : `✗ ${ingestResult.message}`}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={runIngest}
+              disabled={ingestLoading}
+            >
+              {ingestLoading ? 'Running…' : '▶ Run Ingestion'}
+            </button>
+          </div>
+
+          <div className="ops-divider" />
+
+          {/* Retrain */}
+          <div className="ops-item">
+            <div className="ops-item-info">
+              <div className="ops-item-title">Retrain Forecast Model</div>
+              <div className="ops-item-desc">
+                Retrains Random Forest on all available data. Takes 2–5 minutes.
+                Forecasts will be unavailable during training.
+              </div>
+              {retrain.status && retrain.status.state !== 'idle' && (
+                <div className={`ops-result ${
+                  retrain.status.state === 'done'    ? 'ops-result-ok'  :
+                  retrain.status.state === 'error'   ? 'ops-result-err' :
+                  'ops-result-running'}`}>
+                  {retrain.status.state === 'running' && <span className="ops-spinner" />}
+                  {retrain.status.message}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-warning"
+              onClick={() => retrain.setConfirm(true)}
+              disabled={retrain.status?.state === 'running'}
+            >
+              {retrain.status?.state === 'running' ? 'Training…' : '⟳ Retrain Model'}
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Retrain confirmation modal */}
+      {retrain.confirm && (
+        <div className="modal-backdrop" onClick={() => retrain.setConfirm(false)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Retrain Model?</h3>
+              <button className="modal-close" onClick={() => retrain.setConfirm(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#374151', marginBottom: '0.75rem' }}>
+                Retraining takes <strong>2–5 minutes</strong>. During this time:
+              </p>
+              <ul className="retrain-warning-list">
+                <li>Forecast requests will fail with a 503 error</li>
+                <li>Recommendations will be unavailable</li>
+                <li>The new model replaces the current one automatically when done</li>
+              </ul>
+              <div className="modal-footer" style={{ marginTop: '1.25rem' }}>
+                <button className="btn btn-ghost" onClick={() => retrain.setConfirm(false)}>Cancel</button>
+                <button className="btn btn-warning" onClick={retrain.startRetrain}>Start Retraining</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Row 3: Metrics Table ── */}
       <div className="admin-card admin-card-full">
         <h3 className="admin-card-title">Model Performance Metrics</h3>
         <p className="admin-card-sub">Evaluated on the held-out test set (last 3 months of data).</p>
