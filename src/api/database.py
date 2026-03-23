@@ -5,7 +5,7 @@ Default: SQLite (zero-config). Override with DATABASE_URL env var for PostgreSQL
 """
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./korzinka.db")
@@ -40,6 +40,26 @@ class Product(Base):
             "category":  self.category,
             "sku":       self.sku or "",
             "is_active": self.is_active,
+        }
+
+
+class DailySales(Base):
+    __tablename__ = "daily_sales"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    date       = Column(Date, nullable=False)
+    store_id   = Column(Integer, nullable=False)
+    item_id    = Column(Integer, nullable=False)
+    quantity   = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id":       self.id,
+            "date":     str(self.date),
+            "store_id": self.store_id,
+            "item_id":  self.item_id,
+            "quantity": self.quantity,
         }
 
 

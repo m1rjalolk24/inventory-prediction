@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import DataManagement from './DataManagement'
 import AdminPanel from './AdminPanel'
+import POSPage from './POSPage'
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -80,6 +81,7 @@ export default function App() {
   const [forecast30,   setForecast30]   = useState(null)
   const [fcastLoading, setFcastLoading] = useState(false)
   const [dbProducts,   setDbProducts]   = useState({})   // item_id → {name, category}
+  const [todaySold,    setTodaySold]    = useState({})   // item_id → units sold today
   const tableRef = useRef(null)
 
   // Fetch product list from DB on mount
@@ -100,7 +102,9 @@ export default function App() {
     .filter(Boolean).sort())]
 
   const recs = rawRecs?.map(r => {
-    const currentStock = simulateStock(r.item, store, r.avg_daily_demand)
+    const baseStock    = simulateStock(r.item, store, r.avg_daily_demand)
+    const sold         = todaySold[r.item] ?? 0
+    const currentStock = Math.max(0, baseStock - sold)
     return {
       ...r,
       name:         itemLabel(r.item),
@@ -171,7 +175,17 @@ export default function App() {
     finally { setFcastLoading(false) }
   }, [activeModel])
 
-  useEffect(() => { loadRecs(store) }, [store, loadRecs])
+  useEffect(() => {
+    loadRecs(store)
+    fetch(`/api/v1/sales/today?store=${store}`)
+      .then(r => r.json())
+      .then(d => {
+        const map = {}
+        d.sales?.forEach(s => { map[s.item_id] = s.quantity })
+        setTodaySold(map)
+      })
+      .catch(() => {})
+  }, [store, loadRecs])
 
   const handleRowClick = (item) => {
     setSelectedItem(item)
@@ -190,6 +204,7 @@ export default function App() {
         <nav className="header-nav">
           {[
             { id: 'dashboard',        label: 'Dashboard'        },
+            { id: 'pos',              label: 'Point of Sale'    },
             { id: 'data-management',  label: 'Data Management'  },
             { id: 'admin',            label: 'Admin Panel'      },
           ].map(t => (
@@ -201,6 +216,9 @@ export default function App() {
           ))}
         </nav>
       </header>
+
+      {/* ── POS tab ── */}
+      {activeTab === 'pos' && <POSPage />}
 
       {/* ── Data Management tab ── */}
       {activeTab === 'data-management' && <DataManagement />}

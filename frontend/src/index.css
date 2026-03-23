@@ -478,6 +478,17 @@ body {
 .action-icon-danger           { color: #dc2626; }
 .action-icon-danger:hover     { background: #fee2e2; border-color: #fca5a5; }
 
+/* ── POS Page ─────────────────────────────────────────── */
+.pos-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.pos-form { display: flex; flex-direction: column; gap: 1rem; }
+.pos-form-panel { padding: 1.25rem; }
+.pos-log-panel  { padding: 1.25rem; }
+
 /* ── Admin Panel ──────────────────────────────────────── */
 .admin-page {
   padding: 1.5rem;

@@ -26,7 +26,7 @@ from flask_cors import CORS
 
 # Allow importing database.py from the same directory when run directly
 sys.path.insert(0, str(Path(__file__).parent))
-from database import SessionLocal, Product, init_db
+from database import SessionLocal, Product, DailySales, init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -400,6 +400,59 @@ def upload_sales():
         "duplicates_dropped": duplicates_dropped,
         "total_rows": len(df_combined),
     })
+
+
+# ---------------------------------------------------------------------------
+# POS — record sales & fetch today's totals
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/sales/record")
+def record_sale():
+    data = request.get_json(force=True)
+    store_id = data.get("store_id")
+    item_id  = data.get("item_id")
+    quantity = data.get("quantity")
+    if not all([store_id, item_id, quantity]):
+        return jsonify({"error": "store_id, item_id and quantity are required"}), 400
+    if quantity <= 0:
+        return jsonify({"error": "quantity must be positive"}), 400
+
+    db = SessionLocal()
+    try:
+        sale = DailySales(
+            date=datetime.datetime.today().date(),
+            store_id=int(store_id),
+            item_id=int(item_id),
+            quantity=int(quantity),
+        )
+        db.add(sale)
+        db.commit()
+        db.refresh(sale)
+        return jsonify({"sale": sale.to_dict()}), 201
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/sales/today")
+def today_sales():
+    store_id = request.args.get("store", type=int)
+    if store_id is None:
+        return jsonify({"error": "store parameter is required"}), 400
+    today = datetime.datetime.today().date()
+    db = SessionLocal()
+    try:
+        rows = db.query(DailySales).filter_by(store_id=store_id, date=today).all()
+        # Aggregate by item_id (sum all entries for the day)
+        totals = {}
+        for r in rows:
+            totals[r.item_id] = totals.get(r.item_id, 0) + r.quantity
+        return jsonify({
+            "store": store_id,
+            "date": str(today),
+            "sales": [{"item_id": k, "quantity": v} for k, v in totals.items()],
+        })
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
