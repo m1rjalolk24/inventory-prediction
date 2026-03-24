@@ -272,12 +272,34 @@ def run_ingest():
         df["date"] = pd.to_datetime(df["date"].astype(str).str[:10], format="%Y-%m-%d")
         today = pd.Timestamp.today().normalize()
 
+        # Pull actual POS sales recorded today from DB
+        db = SessionLocal()
+        try:
+            pos_rows = db.query(DailySales).filter_by(date=today.date()).all()
+        finally:
+            db.close()
+
+        # Aggregate POS sales: {(store_id, item_id) -> total_quantity}
+        pos_map = {}
+        for r in pos_rows:
+            key = (r.store_id, r.item_id)
+            pos_map[key] = pos_map.get(key, 0) + r.quantity
+
         rows = []
+        used_real, used_synthetic = 0, 0
         for (store, item), group in df.groupby(["store", "item"]):
-            weekday = today.weekday()
-            same_weekday = group[group["date"].dt.weekday == weekday]["sales"]
-            base = same_weekday.mean() if len(same_weekday) > 0 else group["sales"].mean()
-            sales = max(0, round(float(base) * np.random.uniform(0.9, 1.1)))
+            key = (int(store), int(item))
+            if key in pos_map:
+                # Use real recorded sales
+                sales = pos_map[key]
+                used_real += 1
+            else:
+                # Fall back to synthetic based on historical same-weekday average
+                weekday = today.weekday()
+                same_weekday = group[group["date"].dt.weekday == weekday]["sales"]
+                base = same_weekday.mean() if len(same_weekday) > 0 else group["sales"].mean()
+                sales = max(0, round(float(base) * np.random.uniform(0.9, 1.1)))
+                used_synthetic += 1
             rows.append({"date": today.date(), "store": store, "item": item, "sales": sales})
 
         df_new = pd.DataFrame(rows)
@@ -290,9 +312,12 @@ def run_ingest():
         logger.info(f"Ingest: added {len(df_new)} rows for {today.date()}")
 
         return jsonify({
-            "message": f"Ingested {len(df_new)} rows for {today.date()}",
+            "message": f"Ingested {len(df_new)} rows for {today.date()} "
+                       f"({used_real} from POS, {used_synthetic} synthetic)",
             "date": str(today.date()),
             "rows_added": len(df_new),
+            "real_pos_rows": used_real,
+            "synthetic_rows": used_synthetic,
             "total_rows": len(df_combined),
         })
     except Exception as e:
