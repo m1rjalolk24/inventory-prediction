@@ -198,8 +198,7 @@ export default function App() {
       {/* ── Header ── */}
       <header className="header">
         <div className="header-brand">
-          <span className="brand-icon">🛒</span>
-          <span className="brand-name">Inventory Manager</span>
+          <span className="brand-name">Inventory Management System</span>
         </div>
         <nav className="header-nav">
           {[

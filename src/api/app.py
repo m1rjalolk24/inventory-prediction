@@ -147,6 +147,8 @@ def list_items():
 
 @app.post("/api/v1/forecast")
 def forecast():
+    if _retrain_status.get("state") == "running":
+        return jsonify({"error": "Model retraining in progress. Try again in a few minutes."}), 503
     """
     POST /api/v1/forecast
     Body (JSON):
@@ -309,10 +311,13 @@ def _do_retrain():
         raw["date"] = pd.to_datetime(raw["date"].astype(str).str[:10], format="%Y-%m-%d")
         feat_df = build_features(raw)
 
+        # Free old model from memory before training to save ~700MB RAM
+        _models.pop("random_forest", None)
+
         _retrain_status["message"] = f"Training on {len(feat_df):,} rows…"
         model = RandomForestRegressor(
             n_estimators=100, max_depth=10,
-            min_samples_leaf=4, random_state=42, n_jobs=-1,
+            min_samples_leaf=4, random_state=42, n_jobs=1,
         )
         model.fit(feat_df[FEATURE_COLS], feat_df["sales"])
 
