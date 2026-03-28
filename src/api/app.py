@@ -15,6 +15,7 @@ Endpoints:
 """
 
 import sys
+import json
 import threading
 import datetime
 import logging
@@ -429,6 +430,123 @@ def upload_sales():
         "rows_uploaded": rows_incoming,
         "duplicates_dropped": duplicates_dropped,
         "total_rows": len(df_combined),
+    })
+
+
+@app.post("/api/v1/sales/upload-pos")
+def upload_pos():
+    """
+    Flexible POS CSV upload with column mapping.
+    Form fields:
+        file:    CSV file
+        mapping: JSON string {date, store, item, quantity}  →  column names in the CSV
+    Handles:
+        - Any column names via mapping
+        - SKU / numeric item resolution against products table
+        - Multiple orders per day → aggregated to daily totals
+        - Various date formats
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    try:
+        mapping = json.loads(request.form.get("mapping", "{}"))
+    except Exception:
+        return jsonify({"error": "Invalid mapping JSON"}), 400
+
+    for field in ("date", "store", "item", "quantity"):
+        if field not in mapping:
+            return jsonify({"error": f"Mapping missing field: {field}"}), 400
+
+    try:
+        df = pd.read_csv(request.files["file"], dtype=str)
+    except Exception as e:
+        return jsonify({"error": f"Could not parse CSV: {e}"}), 400
+
+    missing_cols = [v for v in mapping.values() if v not in df.columns]
+    if missing_cols:
+        return jsonify({"error": f"Columns not found in CSV: {', '.join(missing_cols)}"}), 400
+
+    # Extract mapped columns
+    df_mapped = pd.DataFrame({
+        "date":  df[mapping["date"]],
+        "store": df[mapping["store"]],
+        "item":  df[mapping["item"]],
+        "sales": df[mapping["quantity"]],
+    })
+
+    # Parse dates — strip time component, handle various formats
+    try:
+        df_mapped["date"] = pd.to_datetime(
+            df_mapped["date"].astype(str).str[:10], format="mixed"
+        ).dt.normalize()
+    except Exception as e:
+        return jsonify({"error": f"Could not parse dates: {e}"}), 400
+
+    # Resolve item column → numeric item_id
+    db = SessionLocal()
+    try:
+        products = db.query(Product).all()
+    finally:
+        db.close()
+
+    sku_to_id  = {p.sku.strip(): p.item_id for p in products if p.sku}
+    name_to_id = {p.name.strip().lower(): p.item_id for p in products}
+
+    def resolve_item(val):
+        s = str(val).strip()
+        try:
+            return int(float(s))          # already numeric
+        except ValueError:
+            pass
+        if s in sku_to_id:
+            return sku_to_id[s]           # exact SKU match
+        if s.lower() in name_to_id:
+            return name_to_id[s.lower()]  # product name match
+        return None
+
+    df_mapped["item"]  = df_mapped["item"].apply(resolve_item)
+    unresolved         = int(df_mapped["item"].isna().sum())
+    df_mapped          = df_mapped.dropna(subset=["item"])
+    df_mapped["item"]  = df_mapped["item"].astype(int)
+    df_mapped["store"] = pd.to_numeric(df_mapped["store"], errors="coerce")
+    df_mapped          = df_mapped.dropna(subset=["store"])
+    df_mapped["store"] = df_mapped["store"].astype(int)
+    df_mapped["sales"] = pd.to_numeric(df_mapped["sales"], errors="coerce").fillna(0).astype(int)
+
+    # Aggregate order-level rows → daily store+item totals
+    df_agg = (
+        df_mapped
+        .groupby(["date", "store", "item"], as_index=False)["sales"]
+        .sum()
+    )
+    rows_incoming = len(df_agg)
+
+    if TRAIN_CSV.exists():
+        df_existing         = pd.read_csv(TRAIN_CSV)
+        df_existing["date"] = pd.to_datetime(
+            df_existing["date"].astype(str).str[:10], format="%Y-%m-%d"
+        )
+        df_combined = pd.concat([df_existing, df_agg], ignore_index=True)
+    else:
+        df_combined = df_agg
+
+    before             = len(df_combined)
+    df_combined        = df_combined.drop_duplicates(subset=["date", "store", "item"], keep="last")
+    df_combined        = df_combined.sort_values(["store", "item", "date"])
+    duplicates_dropped = before - len(df_combined)
+
+    df_combined.to_csv(TRAIN_CSV, index=False, date_format="%Y-%m-%d")
+
+    global _feature_df
+    _feature_df = None
+    logger.info(f"POS upload: {rows_incoming} aggregated rows, {unresolved} unresolved items, {duplicates_dropped} duplicates")
+
+    return jsonify({
+        "rows_uploaded":    rows_incoming,
+        "duplicates_dropped": duplicates_dropped,
+        "unresolved_items": unresolved,
+        "total_rows":       len(df_combined),
     })
 
 

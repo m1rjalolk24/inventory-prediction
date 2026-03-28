@@ -489,6 +489,15 @@ body {
 .pos-form-panel { padding: 1.25rem; }
 .pos-log-panel  { padding: 1.25rem; }
 
+/* Column mapping UI */
+.pos-mapping-grid { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.5rem; }
+.pos-mapping-row  { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 0.75rem; }
+.pos-mapping-label { font-size: 0.82rem; font-weight: 600; color: #374151; }
+.pos-mapping-sample {
+  font-size: 0.75rem; color: #9ca3af; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 120px;
+}
+
 /* ── Admin Panel ──────────────────────────────────────── */
 .admin-page {
   padding: 1.5rem;

@@ -3,65 +3,111 @@ import { useState, useEffect, useRef } from 'react'
 const STORES = Array.from({ length: 10 }, (_, i) => i + 1)
 
 // ---------------------------------------------------------------------------
-// Sales CSV Upload
+// POS CSV Upload with column mapping
 // ---------------------------------------------------------------------------
-const REQUIRED_COLS = ['date', 'store', 'item', 'sales']
+
+// Common column name guesses per required field
+const GUESSES = {
+  date:     ['date', 'transaction_date', 'order_date', 'sale_date', 'created_at', 'datetime', 'time', 'dt'],
+  store:    ['store', 'store_id', 'store_number', 'branch', 'branch_id', 'shop_id', 'location_id'],
+  item:     ['item', 'item_id', 'product_id', 'sku', 'product_sku', 'product_code', 'code', 'barcode'],
+  quantity: ['qty', 'quantity', 'sales', 'units_sold', 'quantity_sold', 'qty_sold', 'amount', 'count', 'sold'],
+}
+
+const FIELD_LABELS = { date: 'Date', store: 'Store ID', item: 'Item / SKU', quantity: 'Quantity Sold' }
+
+function autoGuess(cols) {
+  const lower = cols.map(c => c.toLowerCase())
+  const mapping = {}
+  for (const [field, candidates] of Object.entries(GUESSES)) {
+    const match = candidates.find(c => lower.includes(c))
+    if (match) mapping[field] = cols[lower.indexOf(match)]
+  }
+  return mapping
+}
+
+function parseCsvText(text) {
+  const lines = text.split('\n').filter(Boolean)
+  if (!lines.length) return { cols: [], rows: [] }
+  const cols = lines[0].split(',').map(c => c.trim().replace(/^"|"$/g, ''))
+  const rows = lines.slice(1, 6).map(l =>
+    l.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+  )
+  return { cols, rows }
+}
 
 function SalesUpload() {
+  const [step,      setStep]      = useState('idle')   // idle | mapping | uploading | done
   const [file,      setFile]      = useState(null)
-  const [preview,   setPreview]   = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const [parsed,    setParsed]    = useState(null)     // { cols, rows }
+  const [mapping,   setMapping]   = useState({})
   const [result,    setResult]    = useState(null)
   const [error,     setError]     = useState(null)
   const inputRef = useRef(null)
 
-  const parsePreview = (f) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const lines   = e.target.result.split('\n').filter(Boolean)
-      if (!lines.length) return
-      const cols    = lines[0].split(',').map(c => c.trim().replace(/"/g, '').toLowerCase())
-      const missing = REQUIRED_COLS.filter(c => !cols.includes(c))
-      const rows    = lines.slice(1, 6).map(l => l.split(',').map(v => v.trim().replace(/"/g, '')))
-      setPreview({ cols, rows, missing, valid: missing.length === 0 })
-    }
-    reader.readAsText(f)
+  const reset = () => {
+    setStep('idle'); setFile(null); setParsed(null)
+    setMapping({}); setResult(null); setError(null)
   }
 
   const handleFile = (f) => {
     if (!f) return
-    setFile(f); setResult(null); setError(null)
-    parsePreview(f)
+    setError(null); setResult(null)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const { cols, rows } = parseCsvText(e.target.result)
+      const guessed = autoGuess(cols)
+      setFile(f)
+      setParsed({ cols, rows })
+      setMapping(guessed)
+      setStep('mapping')
+    }
+    reader.readAsText(f)
   }
 
+  const mappingComplete = Object.keys(GUESSES).every(f => mapping[f])
+
+  // Build preview rows using current mapping
+  const previewRows = parsed?.rows.map(row => {
+    const get = (field) => {
+      const col = mapping[field]
+      const idx = parsed.cols.indexOf(col)
+      return idx >= 0 ? row[idx] : '—'
+    }
+    return [get('date'), get('store'), get('item'), get('quantity')]
+  }) ?? []
+
   const handleUpload = async () => {
-    if (!file || !preview?.valid) return
-    setUploading(true); setError(null); setResult(null)
+    if (!mappingComplete) return
+    setStep('uploading'); setError(null)
     try {
       const form = new FormData()
       form.append('file', file)
-      const res  = await fetch('/api/v1/sales/upload', { method: 'POST', body: form })
+      form.append('mapping', JSON.stringify({
+        date:     mapping.date,
+        store:    mapping.store,
+        item:     mapping.item,
+        quantity: mapping.quantity,
+      }))
+      const res  = await fetch('/api/v1/sales/upload-pos', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setResult(data); setFile(null); setPreview(null)
+      setResult(data); setStep('done')
     } catch (e) {
-      setError(e.message)
-    } finally {
-      setUploading(false)
+      setError(e.message); setStep('mapping')
     }
   }
 
-  const reset = () => { setFile(null); setPreview(null); setResult(null); setError(null) }
-
   return (
     <div className="panel" style={{ marginBottom: '1.25rem' }}>
-      <h3 className="admin-card-title">Bulk Sales Upload</h3>
+      <h3 className="admin-card-title">Sales Data Upload</h3>
       <p className="admin-card-sub">
-        Upload a CSV with columns: <code>date, store, item, sales</code>.
-        Duplicates (same date + store + item) are overwritten automatically.
+        Upload any POS report CSV — map your columns to the required fields.
+        Order-level rows are automatically aggregated to daily totals.
       </p>
 
-      {!file && !result && (
+      {/* Step: idle */}
+      {step === 'idle' && (
         <div className="upload-zone"
           onClick={() => inputRef.current?.click()}
           onDragOver={e => e.preventDefault()}
@@ -69,53 +115,102 @@ function SalesUpload() {
           <input ref={inputRef} type="file" accept=".csv" style={{ display: 'none' }}
             onChange={e => handleFile(e.target.files[0])} />
           <div className="upload-icon">↑</div>
-          <div className="upload-label">Click or drag a CSV file here</div>
-          <div className="upload-hint">date, store, item, sales</div>
+          <div className="upload-label">Click or drag any POS CSV here</div>
+          <div className="upload-hint">Any column names — you'll map them in the next step</div>
         </div>
       )}
 
-      {file && preview && (
+      {/* Step: mapping */}
+      {step === 'mapping' && parsed && (
         <div className="upload-preview">
           <div className="upload-file-row">
-            <span className="upload-filename">{file.name}</span>
+            <span className="upload-filename">{file.name} — {parsed.cols.length} columns detected</span>
             <button className="btn btn-ghost btn-sm" onClick={reset}>× Remove</button>
           </div>
-          {preview.missing.length > 0 && (
-            <div className="error-box" style={{ marginBottom: '0.75rem' }}>
-              Missing columns: <strong>{preview.missing.join(', ')}</strong>
-            </div>
-          )}
-          {preview.valid && (
+
+          <p className="upload-preview-label" style={{ marginBottom: '0.75rem' }}>
+            Map your CSV columns to the required fields:
+          </p>
+
+          <div className="pos-mapping-grid">
+            {Object.entries(FIELD_LABELS).map(([field, label]) => (
+              <div key={field} className="pos-mapping-row">
+                <span className="pos-mapping-label">{label}</span>
+                <select
+                  className="filter-select"
+                  value={mapping[field] || ''}
+                  onChange={e => setMapping(m => ({ ...m, [field]: e.target.value }))}
+                >
+                  <option value="">— select column —</option>
+                  {parsed.cols.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                {mapping[field] && (
+                  <span className="pos-mapping-sample">
+                    e.g. {parsed.rows[0]?.[parsed.cols.indexOf(mapping[field])] ?? ''}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {mappingComplete && (
             <>
-              <p className="upload-preview-label">Preview (first 5 rows):</p>
+              <p className="upload-preview-label" style={{ margin: '1rem 0 0.5rem' }}>
+                Preview after mapping (first 5 rows):
+              </p>
               <div className="table-wrap" style={{ marginBottom: '0.75rem' }}>
                 <table className="rec-table">
-                  <thead><tr>{preview.cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
-                  <tbody>{preview.rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j}>{v}</td>)}</tr>)}</tbody>
+                  <thead>
+                    <tr>
+                      <th>Date</th><th>Store</th><th>Item / SKU</th><th>Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i}>{row.map((v, j) => <td key={j}>{v}</td>)}</tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
-              <button className="btn btn-primary" onClick={handleUpload} disabled={uploading}>
-                {uploading ? 'Uploading…' : 'Upload & Append to Training Data'}
-              </button>
+              <p className="chart-note">
+                Rows with the same date + store + item will be summed. Items not matching a known SKU or ID will be skipped.
+              </p>
             </>
           )}
+
+          {error && <div className="error-box" style={{ margin: '0.75rem 0' }}>{error}</div>}
+
+          <button className="btn btn-primary" onClick={handleUpload} disabled={!mappingComplete}>
+            Upload & Append to Training Data
+          </button>
         </div>
       )}
 
-      {result && (
+      {/* Step: uploading */}
+      {step === 'uploading' && (
+        <div className="info-box">Uploading and processing…</div>
+      )}
+
+      {/* Step: done */}
+      {step === 'done' && result && (
         <div className="upload-success">
           <div className="upload-success-icon">✓</div>
           <div>
             <strong>Upload successful</strong>
             <div className="upload-success-detail">
-              {result.rows_uploaded} rows · {result.duplicates_dropped} duplicates removed · {result.total_rows.toLocaleString()} total
+              {result.rows_uploaded} daily totals added
+              · {result.duplicates_dropped} duplicates overwritten
+              · {result.total_rows.toLocaleString()} total rows
+              {result.unresolved_items > 0 && ` · ${result.unresolved_items} items skipped (unknown SKU)`}
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={reset} style={{ marginLeft: 'auto' }}>Upload another</button>
+          <button className="btn btn-ghost btn-sm" onClick={reset} style={{ marginLeft: 'auto' }}>
+            Upload another
+          </button>
         </div>
       )}
-
-      {error && <div className="error-box" style={{ marginTop: '0.75rem' }}>{error}</div>}
     </div>
   )
 }
