@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { authHeaders } from './AuthContext'
 
 const STORES = Array.from({ length: 10 }, (_, i) => i + 1)
 
@@ -89,7 +90,7 @@ function SalesUpload() {
         item:     mapping.item,
         quantity: mapping.quantity,
       }))
-      const res  = await fetch('/api/v1/sales/upload-pos', { method: 'POST', body: form })
+      const res  = await fetch('/api/v1/sales/upload-pos', { method: 'POST', body: form, headers: authHeaders() })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setResult(data); setStep('done')
@@ -225,7 +226,7 @@ export default function POSPage() {
   const [flash,     setFlash]     = useState(null)   // { type: 'ok'|'err', msg }
 
   useEffect(() => {
-    fetch('/api/v1/products')
+    fetch('/api/v1/products', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         const active = (d.products || []).filter(p => p.is_active)
@@ -236,7 +237,7 @@ export default function POSPage() {
   }, [])
 
   const fetchLog = () => {
-    fetch(`/api/v1/sales/today?store=${store}`)
+    fetch(`/api/v1/sales/today?store=${store}`, { headers: authHeaders() })
       .then(r => r.json())
       .then(d => setTodayLog(d.sales || []))
       .catch(() => {})
@@ -254,7 +255,7 @@ export default function POSPage() {
     try {
       const res = await fetch('/api/v1/sales/record', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ store_id: store, item_id: Number(itemId), quantity: Number(quantity) }),
       })
       const data = await res.json()

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authHeaders } from './AuthContext'
 
 const CATEGORIES = [
   'Fresh Produce', 'Dairy & Eggs', 'Bakery', 'Meat & Poultry',
@@ -8,9 +9,10 @@ const CATEGORIES = [
 
 const EMPTY_FORM = { item_id: '', name: '', category: CATEGORIES[0], sku: '', is_active: true }
 
-async function apiFetch(path, options) {
-  const res = await fetch(path, options)
+async function apiFetch(path, options = {}) {
+  const res  = await fetch(path, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 401) { localStorage.removeItem('token'); window.location.reload() }
   if (!res.ok) throw new Error(json.error || res.statusText)
   return json
 }

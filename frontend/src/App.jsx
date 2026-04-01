@@ -4,6 +4,8 @@ import {
   ResponsiveContainer, ComposedChart, Area,
 } from 'recharts'
 import DataManagement from './DataManagement'
+import { AuthProvider, useAuth, authHeaders } from './AuthContext'
+import LoginPage from './LoginPage'
 import AdminPanel from './AdminPanel'
 import POSPage from './POSPage'
 
@@ -55,8 +57,16 @@ const getStatus = (currentStock, reorderPoint) => {
   return 'Healthy'
 }
 
-async function apiFetch(path, options) {
-  const res = await fetch(path, options)
+async function apiFetch(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  })
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.reload()
+    return
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)
@@ -68,6 +78,13 @@ async function apiFetch(path, options) {
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
+  return <AuthProvider><AppInner /></AuthProvider>
+}
+
+function AppInner() {
+  const { user, loading, logout } = useAuth()
+  if (loading) return null
+  if (!user)   return <LoginPage />
   const [activeTab,    setActiveTab]    = useState('dashboard')
   const [activeModel,  setActiveModel]  = useState('random_forest')
   const [store,        setStore]        = useState(1)
@@ -202,10 +219,10 @@ export default function App() {
         </div>
         <nav className="header-nav">
           {[
-            { id: 'dashboard',        label: 'Dashboard'        },
-            { id: 'pos',              label: 'Point of Sale'    },
-            { id: 'data-management',  label: 'Data Management'  },
-            { id: 'admin',            label: 'Admin Panel'      },
+            { id: 'dashboard',       label: 'Dashboard'       },
+            { id: 'pos',             label: 'Point of Sale'   },
+            { id: 'data-management', label: 'Data Management' },
+            ...(user.role === 'admin' ? [{ id: 'admin', label: 'Admin Panel' }] : []),
           ].map(t => (
             <span key={t.id}
               className={`nav-tab ${activeTab === t.id ? 'active' : ''}`}
@@ -214,6 +231,13 @@ export default function App() {
             </span>
           ))}
         </nav>
+        <div className="header-user">
+          <span className="header-username">
+            <span className={`role-badge role-${user.role}`}>{user.role}</span>
+            {user.username}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={logout}>Sign out</button>
+        </div>
       </header>
 
       {/* ── POS tab ── */}

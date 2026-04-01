@@ -17,6 +17,7 @@ ipykernel
 # API
 flask
 flask-cors
+PyJWT
 
 # Database (Phase 2)
 psycopg2-binary

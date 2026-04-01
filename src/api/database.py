@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
+from werkzeug.security import generate_password_hash
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./korzinka.db")
 
@@ -39,6 +40,25 @@ class Product(Base):
             "name":      self.name,
             "category":  self.category,
             "sku":       self.sku or "",
+            "is_active": self.is_active,
+        }
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    username      = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(256), nullable=False)
+    role          = Column(String(20), nullable=False, default="planner")  # 'planner' | 'admin'
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id":       self.id,
+            "username": self.username,
+            "role":     self.role,
             "is_active": self.is_active,
         }
 
@@ -120,8 +140,14 @@ SEED_PRODUCTS = [
 ]
 
 
+SEED_USERS = [
+    ("admin",    "Admin@1234",   "admin"),
+    ("planner1", "Planner@1234", "planner"),
+]
+
+
 def init_db():
-    """Create tables and seed products if empty."""
+    """Create tables and seed products + users if empty."""
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
@@ -129,6 +155,14 @@ def init_db():
             for item_id, name, category, sku in SEED_PRODUCTS:
                 db.add(Product(item_id=item_id, name=name,
                                category=category, sku=sku))
+            db.commit()
+        if db.query(User).count() == 0:
+            for username, password, role in SEED_USERS:
+                db.add(User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=role,
+                ))
             db.commit()
     finally:
         db.close()

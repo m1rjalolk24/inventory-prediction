@@ -15,25 +15,67 @@ Endpoints:
 """
 
 import sys
+import jwt
 import json
+import os
 import threading
 import datetime
 import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from functools import wraps
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from werkzeug.security import check_password_hash
 
 # Allow importing database.py from the same directory when run directly
 sys.path.insert(0, str(Path(__file__).parent))
-from database import SessionLocal, Product, DailySales, init_db
+from database import SessionLocal, Product, DailySales, User, init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# ---------------------------------------------------------------------------
+# JWT helpers
+# ---------------------------------------------------------------------------
+JWT_SECRET  = os.environ.get("JWT_SECRET", "korzinka-dev-secret-change-in-prod")
+JWT_EXPIRY  = 8  # hours
+
+
+def _make_token(user):
+    payload = {
+        "sub":      user.id,
+        "username": user.username,
+        "role":     user.role,
+        "exp":      datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRY),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def require_auth(*roles):
+    """Decorator — validates Bearer JWT and optionally checks role."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+            if not token:
+                return jsonify({"error": "Authentication required"}), 401
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            except jwt.ExpiredSignatureError:
+                return jsonify({"error": "Session expired — please log in again"}), 401
+            except jwt.InvalidTokenError:
+                return jsonify({"error": "Invalid token"}), 401
+            if roles and payload.get("role") not in roles:
+                return jsonify({"error": "Insufficient permissions"}), 403
+            request.current_user = payload
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # Initialise DB + seed products on startup
 init_db()
@@ -84,6 +126,34 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/auth/login")
+def login():
+    body = request.get_json(force=True)
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(username=username).first()
+        if not user or not user.is_active or not check_password_hash(user.password_hash, password):
+            return jsonify({"error": "Invalid username or password"}), 401
+        token = _make_token(user)
+        return jsonify({"token": token, "username": user.username, "role": user.role})
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/auth/me")
+@require_auth("planner", "admin")
+def me():
+    return jsonify(request.current_user)
+
+
+# ---------------------------------------------------------------------------
 # Lazy-loaded cache (features built once on first request, ~30s)
 # ---------------------------------------------------------------------------
 
@@ -127,6 +197,7 @@ def health():
 
 
 @app.get("/api/v1/stores")
+@require_auth("planner", "admin")
 def list_stores():
     try:
         df = _get_features()
@@ -137,6 +208,7 @@ def list_stores():
 
 
 @app.get("/api/v1/items")
+@require_auth("planner", "admin")
 def list_items():
     try:
         df = _get_features()
@@ -147,6 +219,7 @@ def list_items():
 
 
 @app.post("/api/v1/forecast")
+@require_auth("planner", "admin")
 def forecast():
     if _retrain_status.get("state") == "running":
         return jsonify({"error": "Model retraining in progress. Try again in a few minutes."}), 503
@@ -203,6 +276,7 @@ def forecast():
 
 
 @app.get("/api/v1/recommendations")
+@require_auth("planner", "admin")
 def recommendations():
     """
     GET /api/v1/recommendations?store=1&safety_days=3&lead_days=2
@@ -249,6 +323,7 @@ def recommendations():
 
 
 @app.get("/api/v1/metrics")
+@require_auth("planner", "admin")
 def metrics():
     """Return saved model evaluation metrics from results.csv."""
     path = MODELS_DIR / "results.csv"
@@ -263,6 +338,7 @@ def metrics():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/v1/jobs/ingest")
+@require_auth("admin")
 def run_ingest():
     """Simulate one day of new sales and append to train.csv."""
     try:
@@ -365,6 +441,7 @@ def _do_retrain():
 
 
 @app.post("/api/v1/jobs/retrain")
+@require_auth("admin")
 def run_retrain():
     global _retrain_status
     if _retrain_status.get("state") == "running":
@@ -378,6 +455,7 @@ def run_retrain():
 
 
 @app.get("/api/v1/jobs/retrain/status")
+@require_auth("planner", "admin")
 def retrain_status():
     return jsonify(_retrain_status)
 
@@ -387,6 +465,7 @@ def retrain_status():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/v1/sales/upload")
+@require_auth("admin")
 def upload_sales():
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -434,6 +513,7 @@ def upload_sales():
 
 
 @app.post("/api/v1/sales/upload-pos")
+@require_auth("admin")
 def upload_pos():
     """
     Flexible POS CSV upload with column mapping.
@@ -555,6 +635,7 @@ def upload_pos():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/v1/sales/record")
+@require_auth("planner", "admin")
 def record_sale():
     data = request.get_json(force=True)
     store_id = data.get("store_id")
@@ -582,6 +663,7 @@ def record_sale():
 
 
 @app.get("/api/v1/sales/today")
+@require_auth("planner", "admin")
 def today_sales():
     store_id = request.args.get("store", type=int)
     if store_id is None:
@@ -608,6 +690,7 @@ def today_sales():
 # ---------------------------------------------------------------------------
 
 @app.get("/api/v1/products")
+@require_auth("planner", "admin")
 def get_products():
     db = SessionLocal()
     try:
@@ -620,6 +703,7 @@ def get_products():
 
 
 @app.post("/api/v1/products")
+@require_auth("admin")
 def create_product():
     data = request.get_json(force=True)
     required = ("item_id", "name", "category")
@@ -645,6 +729,7 @@ def create_product():
 
 
 @app.put("/api/v1/products/<int:product_id>")
+@require_auth("admin")
 def update_product(product_id):
     data = request.get_json(force=True)
     db = SessionLocal()
@@ -664,6 +749,7 @@ def update_product(product_id):
 
 
 @app.delete("/api/v1/products/<int:product_id>")
+@require_auth("admin")
 def delete_product(product_id):
     db = SessionLocal()
     try:
@@ -672,6 +758,81 @@ def delete_product(product_id):
             return jsonify({"error": "Product not found"}), 404
         db.delete(p)
         db.commit()
+        return jsonify({"message": "Deleted"})
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# User management (admin only)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/users")
+@require_auth("admin")
+def get_users():
+    db = SessionLocal()
+    try:
+        users = db.query(User).order_by(User.id).all()
+        return jsonify({"users": [u.to_dict() for u in users]})
+    finally:
+        db.close()
+
+
+@app.post("/api/v1/users")
+@require_auth("admin")
+def create_user():
+    from werkzeug.security import generate_password_hash
+    data = request.get_json(force=True)
+    if not data.get("username") or not data.get("password"):
+        return jsonify({"error": "username and password are required"}), 400
+    if data.get("role") not in ("admin", "planner"):
+        return jsonify({"error": "role must be admin or planner"}), 400
+    db = SessionLocal()
+    try:
+        if db.query(User).filter_by(username=data["username"]).first():
+            return jsonify({"error": "Username already exists"}), 409
+        u = User(
+            username=data["username"].strip(),
+            password_hash=generate_password_hash(data["password"]),
+            role=data["role"],
+        )
+        db.add(u); db.commit(); db.refresh(u)
+        return jsonify({"user": u.to_dict()}), 201
+    finally:
+        db.close()
+
+
+@app.put("/api/v1/users/<int:user_id>")
+@require_auth("admin")
+def update_user(user_id):
+    from werkzeug.security import generate_password_hash
+    data = request.get_json(force=True)
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter_by(id=user_id).first()
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+        if "role"      in data and data["role"] in ("admin", "planner"): u.role      = data["role"]
+        if "is_active" in data: u.is_active = bool(data["is_active"])
+        if data.get("password"): u.password_hash = generate_password_hash(data["password"])
+        db.commit(); db.refresh(u)
+        return jsonify({"user": u.to_dict()})
+    finally:
+        db.close()
+
+
+@app.delete("/api/v1/users/<int:user_id>")
+@require_auth("admin")
+def delete_user(user_id):
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter_by(id=user_id).first()
+        if not u:
+            return jsonify({"error": "User not found"}), 404
+        # Prevent deleting the last admin
+        if u.role == "admin" and db.query(User).filter_by(role="admin", is_active=True).count() <= 1:
+            return jsonify({"error": "Cannot delete the last admin account"}), 400
+        db.delete(u); db.commit()
         return jsonify({"message": "Deleted"})
     finally:
         db.close()

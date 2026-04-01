@@ -1,4 +1,148 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { authHeaders, useAuth } from './AuthContext'
+
+const EMPTY_USER = { username: '', password: '', role: 'planner' }
+
+function UserModal({ initial, onSave, onClose }) {
+  const isEdit = !!initial?.id
+  const [form,  setForm]  = useState(initial ?? EMPTY_USER)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!isEdit && !form.username.trim()) return setError('Username is required')
+    if (!isEdit && !form.password)        return setError('Password is required')
+    setSaving(true); setError('')
+    try {
+      const url    = isEdit ? `/api/v1/users/${initial.id}` : '/api/v1/users'
+      const method = isEdit ? 'PUT' : 'POST'
+      const res    = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      onSave(data.user)
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{isEdit ? 'Edit User' : 'Add User'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          {!isEdit && (
+            <div className="form-group">
+              <label className="form-label">Username *</label>
+              <input className="form-input" type="text" value={form.username}
+                onChange={e => set('username', e.target.value)} placeholder="e.g. planner2" />
+            </div>
+          )}
+          <div className="form-group">
+            <label className="form-label">{isEdit ? 'New Password (leave blank to keep)' : 'Password *'}</label>
+            <input className="form-input" type="password" value={form.password}
+              onChange={e => set('password', e.target.value)} placeholder="Min 6 characters" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Role</label>
+            <select className="form-select" value={form.role} onChange={e => set('role', e.target.value)}>
+              <option value="planner">Planner — Dashboard + POS</option>
+              <option value="admin">Admin — Full access</option>
+            </select>
+          </div>
+          {isEdit && (
+            <div className="form-group form-group-inline">
+              <label className="form-label" style={{ margin: 0 }}>Active</label>
+              <input type="checkbox" checked={form.is_active ?? true}
+                onChange={e => set('is_active', e.target.checked)} />
+            </div>
+          )}
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add User'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function UsersPanel() {
+  const { user: currentUser } = useAuth()
+  const [users,  setUsers]  = useState([])
+  const [modal,  setModal]  = useState(null)
+  const [error,  setError]  = useState(null)
+
+  const load = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/v1/users', { headers: authHeaders() })
+      const data = await res.json()
+      setUsers(data.users || [])
+    } catch { setError('Failed to load users') }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSaved = (u) => {
+    setUsers(prev => {
+      const idx = prev.findIndex(x => x.id === u.id)
+      return idx >= 0 ? prev.map(x => x.id === u.id ? u : x) : [...prev, u]
+    })
+    setModal(null)
+  }
+
+  const handleDelete = async (u) => {
+    if (!window.confirm(`Delete user "${u.username}"?`)) return
+    const res  = await fetch(`/api/v1/users/${u.id}`, { method: 'DELETE', headers: authHeaders() })
+    const data = await res.json()
+    if (!res.ok) return alert(data.error)
+    setUsers(prev => prev.filter(x => x.id !== u.id))
+  }
+
+  return (
+    <div className="admin-card" style={{ marginTop: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h3 className="admin-card-title" style={{ margin: 0 }}>User Management</h3>
+        <button className="btn btn-primary btn-sm" onClick={() => setModal({ type: 'add' })}>+ Add User</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="table-wrap">
+        <table className="rec-table">
+          <thead>
+            <tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id}>
+                <td className="product-name">{u.username} {u.username === currentUser?.username && <span style={{ color: '#6366f1', fontSize: '0.75rem' }}>(you)</span>}</td>
+                <td><span className={`role-badge role-${u.role}`}>{u.role}</span></td>
+                <td><span className={`status-badge ${u.is_active ? 'status-healthy' : 'status-watch'}`}>{u.is_active ? 'Active' : 'Inactive'}</span></td>
+                <td>
+                  <div className="row-actions">
+                    <button className="action-icon-btn" onClick={() => setModal({ type: 'edit', user: { ...u, password: '' } })}>Edit</button>
+                    <button className="action-icon-btn action-icon-danger" onClick={() => handleDelete(u)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {modal?.type === 'add'  && <UserModal initial={EMPTY_USER}  onSave={handleSaved} onClose={() => setModal(null)} />}
+      {modal?.type === 'edit' && <UserModal initial={modal.user}  onSave={handleSaved} onClose={() => setModal(null)} />}
+    </div>
+  )
+}
 
 const MODELS = [
   { id: 'random_forest',      label: 'Random Forest',      desc: 'Best overall accuracy — recommended',               disabled: false },
@@ -29,7 +173,7 @@ function useRetrain() {
   const pollRef = useRef(null)
 
   const pollStatus = useCallback(() => {
-    fetch('/api/v1/jobs/retrain/status')
+    fetch('/api/v1/jobs/retrain/status', { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         setStatus(data)
@@ -42,7 +186,7 @@ function useRetrain() {
 
   const startRetrain = async () => {
     setConfirm(false)
-    const res  = await fetch('/api/v1/jobs/retrain', { method: 'POST' })
+    const res  = await fetch('/api/v1/jobs/retrain', { method: 'POST', headers: authHeaders() })
     const data = await res.json()
     if (!res.ok) { setStatus({ state: 'error', message: data.error }); return }
     setStatus(data.status)
@@ -67,7 +211,7 @@ export default function AdminPanel({ activeModel, onModelChange }) {
     setIngestLoading(true)
     setIngestResult(null)
     try {
-      const res  = await fetch('/api/v1/jobs/ingest', { method: 'POST' })
+      const res  = await fetch('/api/v1/jobs/ingest', { method: 'POST', headers: authHeaders() })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setIngestResult({ ok: true, ...data })
@@ -84,7 +228,7 @@ export default function AdminPanel({ activeModel, onModelChange }) {
       .then(setHealth)
       .catch(() => setHealth({ status: 'error' }))
 
-    fetch('/api/v1/metrics')
+    fetch('/api/v1/metrics', { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         if (data.metrics) {
@@ -99,9 +243,9 @@ export default function AdminPanel({ activeModel, onModelChange }) {
       })
       .catch(() => setMetricsErr('Could not load metrics'))
 
-    fetch('/api/v1/stores')
+    fetch('/api/v1/stores', { headers: authHeaders() })
       .then(r => r.json())
-      .then(d => fetch('/api/v1/items').then(r => r.json()).then(di =>
+      .then(d => fetch('/api/v1/items', { headers: authHeaders() }).then(r => r.json()).then(di =>
         setDataInfo({ stores: d.count, items: di.count })
       ))
       .catch(() => {})
@@ -319,6 +463,9 @@ export default function AdminPanel({ activeModel, onModelChange }) {
           </div>
         )}
       </div>
+
+      {/* ── User Management ── */}
+      <UsersPanel />
 
     </div>
   )
