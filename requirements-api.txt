@@ -6,6 +6,8 @@ statsmodels
 pmdarima
 flask
 flask-cors
+PyJWT
+werkzeug
 psycopg2-binary
 sqlalchemy
 python-dotenv
