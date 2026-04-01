@@ -48,7 +48,7 @@ JWT_EXPIRY  = 8  # hours
 
 def _make_token(user):
     payload = {
-        "sub":      user.id,
+        "sub":      str(user.id),
         "username": user.username,
         "role":     user.role,
         "exp":      datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRY),
