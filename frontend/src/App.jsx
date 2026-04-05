@@ -89,6 +89,7 @@ function AppInner() {
   const [activeModel,  setActiveModel]  = useState('random_forest')
   const [store,        setStore]        = useState(1)
   const [category,     setCategory]     = useState('All')
+  const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState(null)
   const [rawRecs,      setRawRecs]      = useState(null)
   const [recsLoading,  setRecsLoading]  = useState(false)
@@ -103,7 +104,7 @@ function AppInner() {
 
   // Fetch product list from DB on mount
   useEffect(() => {
-    fetch('/api/v1/products')
+    fetch('/api/v1/products', { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         const map = {}
@@ -131,9 +132,11 @@ function AppInner() {
     }
   })
 
+  const searchLower  = search.trim().toLowerCase()
   const filteredRecs = !recs ? null : recs.filter(r =>
     (category === 'All'   || r.category === category) &&
-    (!statusFilter        || r.status   === statusFilter)
+    (!statusFilter        || r.status   === statusFilter) &&
+    (!searchLower         || r.name.toLowerCase().includes(searchLower) || String(r.item).includes(searchLower))
   )
 
   const criticalCount = recs?.filter(r => r.status === 'Critical').length ?? 0
@@ -283,6 +286,17 @@ function AppInner() {
           </div>
 
           <div className="filter-group">
+            <label className="filter-label">Search</label>
+            <input
+              className="filter-select"
+              type="text"
+              placeholder="Name or ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-group">
             <label className="filter-label">Category</label>
             <select
               className="filter-select"
@@ -353,6 +367,7 @@ function AppInner() {
               <table className="rec-table">
                 <thead>
                   <tr>
+                    <th>ID</th>
                     <th>Product</th>
                     <th>Status</th>
                     <th>Current Stock</th>
@@ -368,9 +383,10 @@ function AppInner() {
                       onClick={() => handleRowClick(r.item)}
                       className={selectedItem === r.item ? 'row-selected' : ''}
                     >
+                      <td className="td-id">#{r.item}</td>
                       <td className="td-product">
                         <div className="product-name">{r.name}</div>
-                        <div className="product-sku">#{r.item}</div>
+                        <div className="product-sku">{r.category}</div>
                       </td>
                       <td>
                         <span className={`status-badge status-${r.status.toLowerCase()}`}>

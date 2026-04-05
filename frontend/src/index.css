@@ -246,6 +246,7 @@ body {
 .rec-table tbody tr:hover     td { background: #fafafa; }
 .rec-table tbody tr.row-selected td { background: #eef2ff; }
 
+.td-id      { font-size: 0.78rem; color: #6b7280; font-family: monospace; white-space: nowrap; }
 .td-product { white-space: normal !important; min-width: 130px; }
 .product-name { font-weight: 600; color: #111827; font-size: 0.85rem; }
 .product-sku  { font-size: 0.7rem; color: #9ca3af; margin-top: 2px; }
