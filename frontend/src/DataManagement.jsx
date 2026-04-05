@@ -106,6 +106,18 @@ function ProductModal({ initial, onSave, onClose }) {
               onChange={e => set('sku', e.target.value)} placeholder="e.g. SKU-001" />
           </div>
 
+          <div className="form-group">
+            <label className="form-label">Unit of Measure</label>
+            <select className="form-select" value={form.unit || 'pcs'}
+              onChange={e => set('unit', e.target.value)}>
+              <option value="pcs">pcs — pieces/items</option>
+              <option value="kg">kg — kilograms</option>
+              <option value="L">L — litres</option>
+              <option value="pack">pack — multi-pack</option>
+              <option value="bag">bag — bag/sack</option>
+            </select>
+          </div>
+
           {isEdit && (
             <div className="form-group form-group-inline">
               <label className="form-label" style={{ margin: 0 }}>Active</label>
@@ -263,6 +275,7 @@ export default function DataManagement() {
                   <th>Item ID</th>
                   <th>Name</th>
                   <th>Category</th>
+                  <th>Unit</th>
                   <th>SKU</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -270,7 +283,7 @@ export default function DataManagement() {
               </thead>
               <tbody>
                 {visible.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                     No products found.
                   </td></tr>
                 )}
@@ -283,6 +296,7 @@ export default function DataManagement() {
                     <td>
                       <span className="category-chip">{p.category}</span>
                     </td>
+                    <td><span className="unit-badge">{p.unit || 'pcs'}</span></td>
                     <td style={{ color: '#9ca3af', fontSize: '0.8rem' }}>{p.sku || '—'}</td>
                     <td>
                       <span className={`status-badge ${p.is_active ? 'status-healthy' : 'status-watch'}`}>

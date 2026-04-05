@@ -294,6 +294,13 @@ def recommendations():
         df = _get_features()
         model = _load_model("random_forest")
 
+        # Load unit map from DB
+        db = SessionLocal()
+        try:
+            unit_map = {p.item_id: p.unit for p in db.query(Product).all()}
+        finally:
+            db.close()
+
         store_df = df[df["store"] == store]
         recs = []
         for item, group in store_df.groupby("item"):
@@ -310,6 +317,7 @@ def recommendations():
                 "safety_stock": round(safety_stock, 2),
                 "reorder_point": round(reorder_point, 2),
                 "order_quantity": max(0, round(forecast_7d)),
+                "unit": unit_map.get(int(item), "pcs"),
             })
 
         recs_sorted = sorted(recs, key=lambda x: x["forecast_7d"], reverse=True)

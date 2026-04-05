@@ -98,6 +98,7 @@ function AppInner() {
   const [forecast7,    setForecast7]    = useState(null)
   const [forecast30,   setForecast30]   = useState(null)
   const [fcastLoading, setFcastLoading] = useState(false)
+  const [fullscreenChart, setFullscreenChart] = useState(null)  // '7d' | '30d' | null
   const [dbProducts,   setDbProducts]   = useState({})   // item_id → {name, category}
   const [todaySold,    setTodaySold]    = useState({})   // item_id → units sold today
   const tableRef = useRef(null)
@@ -116,6 +117,7 @@ function AppInner() {
 
   const itemLabel  = id => dbProducts[id]?.name     ?? FALLBACK_NAMES[id] ?? `Item ${id}`
   const itemCat    = id => dbProducts[id]?.category ?? 'Other'
+  const itemUnit   = id => dbProducts[id]?.unit     ?? 'pcs'
   const categories = ['All', ...new Set(Object.values(dbProducts).map(p => p.category)
     .filter(Boolean).sort())]
 
@@ -129,6 +131,7 @@ function AppInner() {
       currentStock,
       status:       getStatus(currentStock, r.reorder_point),
       category:     itemCat(r.item),
+      unit:         itemUnit(r.item),
     }
   })
 
@@ -396,9 +399,9 @@ function AppInner() {
                           {r.status}
                         </span>
                       </td>
-                      <td>{r.currentStock} units</td>
-                      <td>{r.forecast_7d} units</td>
-                      <td>{r.reorder_point} units</td>
+                      <td>{r.currentStock} {r.unit}</td>
+                      <td>{r.forecast_7d} {r.unit}</td>
+                      <td>{r.reorder_point} {r.unit}</td>
                       <td>
                         {r.status === 'Critical' && (
                           <span className="action-btn action-critical">+{r.order_quantity} Order Now</span>
@@ -433,13 +436,14 @@ function AppInner() {
               <h4 className="chart-title">
                 📈 7-Day Tactical Forecast
                 <span className="chart-subtitle">{itemLabel(selectedItem)}</span>
+                <button className="chart-expand-btn" onClick={() => setFullscreenChart('7d')} title="Fullscreen">⤢</button>
               </h4>
               <ResponsiveContainer width="100%" height={175}>
                 <LineChart data={forecast7} margin={{ top: 5, right: 8, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
                   <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={v => [`${v} units`, 'Forecast']} labelFormatter={l => `Date: ${l}`} />
+                  <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`, 'Forecast']} labelFormatter={l => `Date: ${l}`} />
                   <Line type="monotone" dataKey="forecast" name="Forecast"
                     stroke="#6366f1" strokeWidth={2} dot={{ r: 3, fill: '#6366f1' }} />
                 </LineChart>
@@ -449,13 +453,16 @@ function AppInner() {
 
           {!fcastLoading && forecast30 && (
             <div className="forecast-section">
-              <h4 className="chart-title">📅 30-Day Strategic View</h4>
+              <h4 className="chart-title">
+                📅 30-Day Strategic View
+                <button className="chart-expand-btn" onClick={() => setFullscreenChart('30d')} title="Fullscreen">⤢</button>
+              </h4>
               <ResponsiveContainer width="100%" height={175}>
                 <ComposedChart data={forecast30} margin={{ top: 5, right: 8, left: -15, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} interval={6} />
                   <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={v => [`${v} units`]} />
+                  <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`]} />
                   <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="transparent" />
                   <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±15% band" />
                   <Line type="monotone" dataKey="forecast" name="Forecast"
@@ -466,6 +473,127 @@ function AppInner() {
             </div>
           )}
         </aside>
+
+        {/* Fullscreen chart modal */}
+        {fullscreenChart && forecast7 && (
+          <div className="modal-backdrop" onClick={() => setFullscreenChart(null)}>
+            <div className="chart-modal" onClick={e => e.stopPropagation()}>
+              <div className="chart-modal-header">
+                <div>
+                  <h3 className="chart-modal-title">
+                    {fullscreenChart === '7d' ? '📈 7-Day Tactical Forecast' : '📅 30-Day Strategic View'}
+                  </h3>
+                  <span className="chart-subtitle">{itemLabel(selectedItem)} — Store #{store}</span>
+                </div>
+                <button className="modal-close" onClick={() => setFullscreenChart(null)}>×</button>
+              </div>
+
+              <div className="chart-modal-body">
+                <ResponsiveContainer width="100%" height={340}>
+                  {fullscreenChart === '7d' ? (
+                    <LineChart data={forecast7} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`, 'Forecast']} labelFormatter={l => `Date: ${l}`} />
+                      <Line type="monotone" dataKey="forecast" name="Forecast"
+                        stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#6366f1' }} />
+                    </LineChart>
+                  ) : (
+                    <ComposedChart data={forecast30} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={d => d.slice(5)} interval={4} />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`]} />
+                      <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="transparent" />
+                      <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±15% band" />
+                      <Line type="monotone" dataKey="forecast" name="Forecast"
+                        stroke="#6366f1" strokeWidth={3} dot={false} />
+                    </ComposedChart>
+                  )}
+                </ResponsiveContainer>
+
+                <div className="chart-insights">
+                  {fullscreenChart === '7d' && forecast7.length > 0 && (() => {
+                    const vals    = forecast7.map(d => d.forecast)
+                    const total   = vals.reduce((a, b) => a + b, 0)
+                    const avg     = Math.round(total / vals.length)
+                    const peak    = forecast7[vals.indexOf(Math.max(...vals))]
+                    const low     = forecast7[vals.indexOf(Math.min(...vals))]
+                    const trend   = vals[vals.length - 1] > vals[0] ? 'upward' : 'downward'
+                    const trendPct = Math.abs(Math.round(((vals[vals.length-1] - vals[0]) / vals[0]) * 100))
+                    return (
+                      <div className="insights-grid">
+                        <div className="insight-card">
+                          <div className="insight-value">{total}</div>
+                          <div className="insight-label">Total 7-day demand</div>
+                        </div>
+                        <div className="insight-card">
+                          <div className="insight-value">{avg}</div>
+                          <div className="insight-label">Daily average</div>
+                        </div>
+                        <div className="insight-card insight-highlight">
+                          <div className="insight-value">{peak.forecast}</div>
+                          <div className="insight-label">Peak — {peak.date}</div>
+                        </div>
+                        <div className="insight-card">
+                          <div className="insight-value">{low.forecast}</div>
+                          <div className="insight-label">Lowest — {low.date}</div>
+                        </div>
+                        <div className="insight-card insight-full">
+                          <div className="insight-text">
+                            <strong>Interpretation:</strong> Demand is trending <strong>{trend}</strong> by {trendPct}% over the next 7 days.
+                            {trend === 'upward'
+                              ? ' Consider placing an order ahead of the peak to avoid stockout.'
+                              : ' Stock levels should remain adequate — monitor but no immediate action needed.'}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {fullscreenChart === '30d' && forecast30.length > 0 && (() => {
+                    const vals    = forecast30.map(d => d.forecast)
+                    const total   = vals.reduce((a, b) => a + b, 0)
+                    const avg     = Math.round(total / vals.length)
+                    const peak    = forecast30[vals.indexOf(Math.max(...vals))]
+                    const trend   = vals[vals.length - 1] > vals[0] ? 'upward' : 'downward'
+                    const maxUpper = Math.round(Math.max(...vals) * 1.15)
+                    const minLower = Math.round(Math.min(...vals) * 0.85)
+                    return (
+                      <div className="insights-grid">
+                        <div className="insight-card">
+                          <div className="insight-value">{total}</div>
+                          <div className="insight-label">Total 30-day demand</div>
+                        </div>
+                        <div className="insight-card">
+                          <div className="insight-value">{avg}</div>
+                          <div className="insight-label">Daily average</div>
+                        </div>
+                        <div className="insight-card insight-highlight">
+                          <div className="insight-value">{peak.forecast}</div>
+                          <div className="insight-label">Peak — {peak.date?.slice(5)}</div>
+                        </div>
+                        <div className="insight-card">
+                          <div className="insight-value">{minLower}–{maxUpper}</div>
+                          <div className="insight-label">Confidence range</div>
+                        </div>
+                        <div className="insight-card insight-full">
+                          <div className="insight-text">
+                            <strong>Interpretation:</strong> Over the next 30 days, demand shows an <strong>{trend}</strong> trend
+                            with a total forecasted volume of <strong>{total} {itemUnit(selectedItem)}</strong>.
+                            The confidence band (±15%) suggests ordering between <strong>{minLower}</strong> and <strong>{maxUpper}</strong> {itemUnit(selectedItem)}
+                            per day to maintain optimal stock levels.
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
       </>}
