@@ -775,6 +775,24 @@ body {
 .btn-warning:hover    { background: #d97706; }
 .btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.btn-success          { background: #16a34a; color: #fff; border: none; border-radius: 6px;
+                        padding: 0.5rem 1rem; font-size: 0.9rem; font-weight: 600;
+                        cursor: pointer; transition: background 0.15s; }
+.btn-success:hover    { background: #15803d; }
+.btn-success:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* POS tab switcher */
+.pos-tabs            { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+.pos-tab             { padding: 6px 18px; border-radius: 8px; border: 1.5px solid #e5e7eb;
+                       background: #fff; cursor: pointer; font-size: 0.85rem;
+                       font-weight: 500; color: #6b7280; transition: all 0.15s; }
+.pos-tab.active      { background: #6366f1; color: #fff; border-color: #6366f1; }
+.pos-tab:not(.active):hover { background: #f3f4f6; }
+
+/* Make action-btn clickable when rendered as <button> */
+button.action-btn    { cursor: pointer; border: none; }
+button.action-btn:hover { filter: brightness(0.88); }
+
 .retrain-warning-list {
   padding-left: 1.25rem;
   font-size: 0.82rem;

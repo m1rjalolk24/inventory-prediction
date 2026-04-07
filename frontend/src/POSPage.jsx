@@ -225,6 +225,7 @@ export default function POSPage({ onDataUpdated }) {
   const [todayLog,  setTodayLog]  = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [flash,     setFlash]     = useState(null)   // { type: 'ok'|'err', msg }
+  const [posTab,    setPosTab]    = useState('sale') // 'sale' | 'receive'
 
   useEffect(() => {
     fetch('/api/v1/products', { headers: authHeaders() })
@@ -272,6 +273,30 @@ export default function POSPage({ onDataUpdated }) {
     }
   }
 
+  const handleReceive = async (e) => {
+    e.preventDefault()
+    if (!itemId) return
+    setSubmitting(true)
+    setFlash(null)
+    try {
+      const res = await fetch('/api/v1/stock/receive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ store_id: store, item_id: Number(itemId), quantity: Number(quantity) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      const p = productMap[Number(itemId)]
+      setFlash({ type: 'ok', msg: `+${quantity} ${p?.unit ?? 'units'} of ${p?.name ?? `Item ${itemId}`} received into Store #${store}` })
+      setQuantity(1)
+      onDataUpdated?.()
+    } catch (err) {
+      setFlash({ type: 'err', msg: err.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const totalToday = todayLog.reduce((s, r) => s + r.quantity, 0)
 
   return (
@@ -289,9 +314,21 @@ export default function POSPage({ onDataUpdated }) {
 
         {/* ── Entry form ── */}
         <div className="panel pos-form-panel">
-          <h3 className="admin-card-title">Record Sale</h3>
 
-          <form onSubmit={handleRecord} className="pos-form">
+          {/* Tab switcher */}
+          <div className="pos-tabs">
+            <button className={`pos-tab ${posTab === 'sale'    ? 'active' : ''}`}
+              onClick={() => { setPosTab('sale');    setFlash(null) }}>
+              Record Sale
+            </button>
+            <button className={`pos-tab ${posTab === 'receive' ? 'active' : ''}`}
+              onClick={() => { setPosTab('receive'); setFlash(null) }}>
+              Receive Delivery
+            </button>
+          </div>
+
+          {/* Shared store + product + quantity fields */}
+          <form onSubmit={posTab === 'sale' ? handleRecord : handleReceive} className="pos-form">
             <div className="form-group">
               <label className="filter-label">Store</label>
               <select className="filter-select" value={store}
@@ -313,7 +350,9 @@ export default function POSPage({ onDataUpdated }) {
             </div>
 
             <div className="form-group">
-              <label className="filter-label">Quantity Sold</label>
+              <label className="filter-label">
+                {posTab === 'sale' ? 'Quantity Sold' : 'Quantity Received'}
+              </label>
               <input
                 className="form-input"
                 type="number"
@@ -332,15 +371,23 @@ export default function POSPage({ onDataUpdated }) {
               </div>
             )}
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}
-              disabled={submitting || !itemId}>
-              {submitting ? 'Recording…' : '+ Record Sale'}
-            </button>
+            {posTab === 'sale' ? (
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}
+                disabled={submitting || !itemId}>
+                {submitting ? 'Recording…' : '− Record Sale'}
+              </button>
+            ) : (
+              <button type="submit" className="btn btn-success" style={{ width: '100%' }}
+                disabled={submitting || !itemId}>
+                {submitting ? 'Saving…' : '+ Receive Delivery'}
+              </button>
+            )}
           </form>
 
           <p className="chart-note" style={{ marginTop: '1rem' }}>
-            Sales recorded here reduce current stock on the Dashboard instantly.
-            Run <strong>Daily Ingestion</strong> in Admin Panel to include today's sales in future forecasts.
+            {posTab === 'sale'
+              ? 'Sales reduce current stock on the Dashboard instantly.'
+              : 'Received deliveries increase current stock on the Dashboard instantly.'}
           </p>
         </div>
 

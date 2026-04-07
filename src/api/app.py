@@ -730,6 +730,40 @@ def record_sale():
         db.close()
 
 
+@app.post("/api/v1/stock/receive")
+@require_auth("planner", "admin")
+def receive_stock():
+    """
+    POST /api/v1/stock/receive
+    Body: { store_id, item_id, quantity }
+    Increments StockLevel for the given store+item.
+    """
+    data     = request.get_json(force=True)
+    store_id = data.get("store_id")
+    item_id  = data.get("item_id")
+    quantity = data.get("quantity")
+    if not all([store_id, item_id, quantity]):
+        return jsonify({"error": "store_id, item_id and quantity are required"}), 400
+    if quantity <= 0:
+        return jsonify({"error": "quantity must be positive"}), 400
+
+    db = SessionLocal()
+    try:
+        row = db.query(StockLevel).filter_by(
+            store_id=int(store_id), item_id=int(item_id)
+        ).first()
+        if row is None:
+            row = StockLevel(store_id=int(store_id), item_id=int(item_id), quantity=0.0)
+            db.add(row)
+        row.quantity = float(row.quantity) + float(quantity)
+        db.commit()
+        db.refresh(row)
+        return jsonify({"store_id": int(store_id), "item_id": int(item_id),
+                        "new_quantity": row.quantity}), 200
+    finally:
+        db.close()
+
+
 @app.get("/api/v1/sales/today")
 @require_auth("planner", "admin")
 def today_sales():

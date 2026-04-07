@@ -233,6 +233,19 @@ function AppInner() {
     loadForecasts(store, item)
   }
 
+  const handleMarkReceived = async (itemId, qty) => {
+    try {
+      await apiFetch('/api/v1/stock/receive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: store, item_id: itemId, quantity: qty }),
+      })
+      loadRecs(store)
+    } catch (e) {
+      console.error('Receive failed', e)
+    }
+  }
+
   return (
     <div className="app">
 
@@ -432,13 +445,21 @@ function AppInner() {
                           <span className="action-btn action-waste-risk">Transfer Out / Promote</span>
                         )}
                         {r.status === 'Critical' && (
-                          <span className="action-btn action-critical">+{r.order_quantity} Order Now</span>
+                          <button className="action-btn action-critical"
+                            onClick={e => { e.stopPropagation(); handleMarkReceived(r.item, r.order_quantity) }}
+                            title="Mark order as received — adds stock">
+                            +{r.order_quantity} {r.unit} · Mark Received
+                          </button>
                         )}
                         {r.status === 'Overstock' && (
                           <span className="action-btn action-overstock">Reduce Orders / Transfer</span>
                         )}
                         {r.status === 'Watch' && (
-                          <span className="action-btn action-watch">+{Math.round(r.order_quantity * 0.5)} Monitor</span>
+                          <button className="action-btn action-watch"
+                            onClick={e => { e.stopPropagation(); handleMarkReceived(r.item, Math.round(r.order_quantity * 0.5)) }}
+                            title="Mark partial order as received">
+                            +{Math.round(r.order_quantity * 0.5)} {r.unit} · Mark Received
+                          </button>
                         )}
                         {r.status === 'Healthy' && (
                           <span className="action-btn action-healthy">No Action Needed</span>
