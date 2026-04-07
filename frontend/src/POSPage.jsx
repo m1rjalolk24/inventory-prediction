@@ -37,7 +37,7 @@ function parseCsvText(text) {
   return { cols, rows }
 }
 
-function SalesUpload() {
+function SalesUpload({ onDataUpdated }) {
   const [step,      setStep]      = useState('idle')   // idle | mapping | uploading | done
   const [file,      setFile]      = useState(null)
   const [parsed,    setParsed]    = useState(null)     // { cols, rows }
@@ -94,6 +94,7 @@ function SalesUpload() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setResult(data); setStep('done')
+      onDataUpdated?.()
     } catch (e) {
       setError(e.message); setStep('mapping')
     }
@@ -216,7 +217,7 @@ function SalesUpload() {
   )
 }
 
-export default function POSPage() {
+export default function POSPage({ onDataUpdated }) {
   const [store,     setStore]     = useState(1)
   const [itemId,    setItemId]    = useState('')
   const [quantity,  setQuantity]  = useState(1)
@@ -282,7 +283,7 @@ export default function POSPage() {
         </div>
       </div>
 
-      <SalesUpload />
+      <SalesUpload onDataUpdated={onDataUpdated} />
 
       <div className="pos-layout">
 

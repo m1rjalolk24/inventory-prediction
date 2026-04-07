@@ -31,7 +31,7 @@ from werkzeug.security import check_password_hash
 
 # Allow importing database.py from the same directory when run directly
 sys.path.insert(0, str(Path(__file__).parent))
-from database import SessionLocal, Product, DailySales, User, init_db
+from database import SessionLocal, Product, DailySales, StockLevel, User, init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -187,6 +187,19 @@ def _load_model(name: str):
     return _models[name]
 
 
+def _get_or_init_stock(db, store_id: int, item_id: int, avg_daily: float) -> float:
+    """Return current stock from DB; initialise using simulateStock formula if missing."""
+    row = db.query(StockLevel).filter_by(store_id=store_id, item_id=item_id).first()
+    if row is None:
+        sim_days = (item_id * 17 + store_id * 31) % 9 + 2
+        quantity = round(avg_daily * sim_days)
+        row = StockLevel(store_id=store_id, item_id=item_id, quantity=float(quantity))
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return float(row.quantity)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -298,27 +311,29 @@ def recommendations():
         db = SessionLocal()
         try:
             unit_map = {p.item_id: p.unit for p in db.query(Product).all()}
+
+            store_df = df[df["store"] == store]
+            recs = []
+            for item, group in store_df.groupby("item"):
+                latest = group.sort_values("date").tail(7)
+                preds = np.clip(model.predict(latest[FEATURE_COLS]), 0, None)
+                avg_daily = float(np.mean(preds))
+                forecast_7d = float(np.sum(preds))
+                safety_stock = avg_daily * safety_days
+                reorder_point = avg_daily * lead_days + safety_stock
+                current_stock = _get_or_init_stock(db, store, int(item), avg_daily)
+                recs.append({
+                    "item":             int(item),
+                    "avg_daily_demand": round(avg_daily, 2),
+                    "forecast_7d":      round(forecast_7d, 2),
+                    "safety_stock":     round(safety_stock, 2),
+                    "reorder_point":    round(reorder_point, 2),
+                    "order_quantity":   max(0, round(forecast_7d)),
+                    "unit":             unit_map.get(int(item), "pcs"),
+                    "current_stock":    round(current_stock, 2),
+                })
         finally:
             db.close()
-
-        store_df = df[df["store"] == store]
-        recs = []
-        for item, group in store_df.groupby("item"):
-            latest = group.sort_values("date").tail(7)
-            preds = np.clip(model.predict(latest[FEATURE_COLS]), 0, None)
-            avg_daily = float(np.mean(preds))
-            forecast_7d = float(np.sum(preds))
-            safety_stock = avg_daily * safety_days
-            reorder_point = avg_daily * lead_days + safety_stock
-            recs.append({
-                "item": int(item),
-                "avg_daily_demand": round(avg_daily, 2),
-                "forecast_7d": round(forecast_7d, 2),
-                "safety_stock": round(safety_stock, 2),
-                "reorder_point": round(reorder_point, 2),
-                "order_quantity": max(0, round(forecast_7d)),
-                "unit": unit_map.get(int(item), "pcs"),
-            })
 
         recs_sorted = sorted(recs, key=lambda x: x["forecast_7d"], reverse=True)
         return jsonify({"store": store, "recommendations": recs_sorted})
@@ -327,6 +342,89 @@ def recommendations():
         return jsonify({"error": str(e)}), 503
     except Exception as e:
         logger.exception("Recommendations error")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/v1/transfer-suggestions")
+@require_auth("planner", "admin")
+def transfer_suggestions():
+    """
+    GET /api/v1/transfer-suggestions?store=1
+
+    For the given store, finds products that are overstocked (current stock > 2× 7-day forecast)
+    and matches them with other stores that are understocked for the same product.
+    Stock levels are computed using the same deterministic formula as the frontend simulateStock().
+    """
+    store = request.args.get("store", type=int)
+    if store is None:
+        return jsonify({"error": "store parameter is required"}), 400
+
+    try:
+        df = _get_features()
+        model = _load_model("random_forest")
+
+        db = SessionLocal()
+        try:
+            unit_map = {p.item_id: p.unit for p in db.query(Product).all()}
+            name_map = {p.item_id: p.name for p in db.query(Product).all()}
+
+            all_stores = sorted(df["store"].unique())
+
+            # Build stock snapshot for every (store, item) pair using DB stock levels
+            stock = {}
+            for s in all_stores:
+                store_df = df[df["store"] == s]
+                for item, group in store_df.groupby("item"):
+                    latest = group.sort_values("date").tail(7)
+                    preds = np.clip(model.predict(latest[FEATURE_COLS]), 0, None)
+                    avg_daily = float(np.mean(preds))
+                    forecast_7d = float(np.sum(preds))
+                    reorder_pt = avg_daily * 5  # safety_days=3 + lead_days=2
+                    current = _get_or_init_stock(db, int(s), int(item), avg_daily)
+                    stock[(int(s), int(item))] = {
+                        "avg_daily":   avg_daily,
+                        "forecast_7d": forecast_7d,
+                        "reorder_pt":  reorder_pt,
+                        "current":     current,
+                    }
+        finally:
+            db.close()
+
+        suggestions = []
+        for item in df[df["store"] == store]["item"].unique():
+            from_d = stock.get((store, int(item)))
+            if not from_d or from_d["current"] <= from_d["forecast_7d"] * 2:
+                continue  # not overstocked
+            excess = from_d["current"] - round(from_d["forecast_7d"])
+            for to_store in all_stores:
+                if int(to_store) == store or excess <= 0:
+                    continue
+                to_d = stock.get((int(to_store), int(item)))
+                if not to_d or to_d["current"] >= to_d["reorder_pt"]:
+                    continue  # destination has enough stock
+                need = round(to_d["forecast_7d"] - to_d["current"])
+                qty = min(excess, max(0, need))
+                if qty <= 0:
+                    continue
+                unit = unit_map.get(int(item), "pcs")
+                suggestions.append({
+                    "item":         int(item),
+                    "name":         name_map.get(int(item), f"Product {item}"),
+                    "to_store":     int(to_store),
+                    "transfer_qty": qty,
+                    "reason": (
+                        f"Store {to_store} has {to_d['current']} {unit} "
+                        f"vs {round(to_d['forecast_7d'])} {unit} 7d demand"
+                    ),
+                })
+                excess -= qty
+
+        return jsonify({"store": store, "suggestions": suggestions})
+
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        logger.exception("Transfer suggestions error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -342,72 +440,8 @@ def metrics():
 
 
 # ---------------------------------------------------------------------------
-# Background jobs: daily ingest + model retrain
+# Background jobs: model retrain
 # ---------------------------------------------------------------------------
-
-@app.post("/api/v1/jobs/ingest")
-@require_auth("admin")
-def run_ingest():
-    """Simulate one day of new sales and append to train.csv."""
-    try:
-        if not TRAIN_CSV.exists():
-            return jsonify({"error": "train.csv not found"}), 404
-
-        df = pd.read_csv(TRAIN_CSV)
-        df["date"] = pd.to_datetime(df["date"].astype(str).str[:10], format="%Y-%m-%d")
-        today = pd.Timestamp.today().normalize()
-
-        # Pull actual POS sales recorded today from DB
-        db = SessionLocal()
-        try:
-            pos_rows = db.query(DailySales).filter_by(date=today.date()).all()
-        finally:
-            db.close()
-
-        # Aggregate POS sales: {(store_id, item_id) -> total_quantity}
-        pos_map = {}
-        for r in pos_rows:
-            key = (r.store_id, r.item_id)
-            pos_map[key] = pos_map.get(key, 0) + r.quantity
-
-        rows = []
-        used_real, used_synthetic = 0, 0
-        for (store, item), group in df.groupby(["store", "item"]):
-            key = (int(store), int(item))
-            if key in pos_map:
-                # Use real recorded sales
-                sales = pos_map[key]
-                used_real += 1
-            else:
-                # Fall back to synthetic based on historical same-weekday average
-                weekday = today.weekday()
-                same_weekday = group[group["date"].dt.weekday == weekday]["sales"]
-                base = same_weekday.mean() if len(same_weekday) > 0 else group["sales"].mean()
-                sales = max(0, round(float(base) * np.random.uniform(0.9, 1.1)))
-                used_synthetic += 1
-            rows.append({"date": today.date(), "store": store, "item": item, "sales": sales})
-
-        df_new = pd.DataFrame(rows)
-        df_combined = pd.concat([df, df_new], ignore_index=True)
-        df_combined = df_combined.drop_duplicates(subset=["date", "store", "item"], keep="last")
-        df_combined.to_csv(TRAIN_CSV, index=False, date_format="%Y-%m-%d")
-
-        global _feature_df
-        _feature_df = None
-        logger.info(f"Ingest: added {len(df_new)} rows for {today.date()}")
-
-        return jsonify({
-            "message": f"Ingested {len(df_new)} rows for {today.date()} "
-                       f"({used_real} from POS, {used_synthetic} synthetic)",
-            "date": str(today.date()),
-            "rows_added": len(df_new),
-            "real_pos_rows": used_real,
-            "synthetic_rows": used_synthetic,
-            "total_rows": len(df_combined),
-        })
-    except Exception as e:
-        logger.exception("Ingest error")
-        return jsonify({"error": str(e)}), 500
 
 
 def _do_retrain():
@@ -628,6 +662,23 @@ def upload_pos():
 
     global _feature_df
     _feature_df = None
+
+    # Decrement StockLevel for every uploaded sale row
+    db = SessionLocal()
+    try:
+        for _, row in df_agg.iterrows():
+            store_id = int(row["store"])
+            item_id  = int(row["item"])
+            qty      = int(row["sales"])
+            stock_row = db.query(StockLevel).filter_by(
+                store_id=store_id, item_id=item_id
+            ).first()
+            if stock_row is not None:
+                stock_row.quantity = max(0.0, float(stock_row.quantity) - qty)
+        db.commit()
+    finally:
+        db.close()
+
     logger.info(f"POS upload: {rows_incoming} aggregated rows, {unresolved} unresolved items, {duplicates_dropped} duplicates")
 
     return jsonify({
@@ -665,6 +716,15 @@ def record_sale():
         db.add(sale)
         db.commit()
         db.refresh(sale)
+
+        # Decrement persistent stock level
+        stock_row = db.query(StockLevel).filter_by(
+            store_id=int(store_id), item_id=int(item_id)
+        ).first()
+        if stock_row is not None:
+            stock_row.quantity = max(0.0, float(stock_row.quantity) - int(quantity))
+            db.commit()
+
         return jsonify({"sale": sale.to_dict()}), 201
     finally:
         db.close()

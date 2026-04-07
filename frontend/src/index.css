@@ -164,9 +164,11 @@ body {
 .status-count-active       { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
 
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-critical { background: #ef4444; }
-.dot-watch    { background: #f59e0b; }
-.dot-healthy  { background: #22c55e; }
+.dot-waste-risk { background: #ea580c; }
+.dot-critical   { background: #ef4444; }
+.dot-overstock  { background: #d97706; }
+.dot-watch      { background: #f59e0b; }
+.dot-healthy    { background: #22c55e; }
 
 .clear-filter {
   margin-top: 0.25rem;
@@ -261,9 +263,11 @@ body {
   border-radius: 999px;
   letter-spacing: 0.01em;
 }
-.status-critical { background: #fee2e2; color: #dc2626; }
-.status-watch    { background: #fef3c7; color: #d97706; }
-.status-healthy  { background: #dcfce7; color: #16a34a; }
+.status-waste-risk { background: #ffedd5; color: #c2410c; }
+.status-critical   { background: #fee2e2; color: #dc2626; }
+.status-overstock  { background: #fef9c3; color: #a16207; }
+.status-watch      { background: #fef3c7; color: #d97706; }
+.status-healthy    { background: #dcfce7; color: #16a34a; }
 
 /* ── Action buttons ──────────────────────────────────── */
 .action-btn {
@@ -275,9 +279,52 @@ body {
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
-.action-critical { background: #ef4444; color: #fff; }
-.action-watch    { background: #f59e0b; color: #fff; }
-.action-healthy  { background: #f3f4f6; color: #9ca3af; }
+.action-waste-risk { background: #ea580c; color: #fff; }
+.action-critical   { background: #ef4444; color: #fff; }
+.action-overstock  { background: #d97706; color: #fff; }
+.action-watch      { background: #f59e0b; color: #fff; }
+.action-healthy    { background: #f3f4f6; color: #9ca3af; }
+
+/* ── Transfer Suggestions panel ─────────────────────── */
+.transfers-panel {
+  grid-column: 1 / -1;
+  background: #fff;
+  border: 1.5px solid #fed7aa;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-top: 0.5rem;
+}
+.transfers-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #9a3412;
+  margin: 0 0 0.25rem;
+}
+.transfers-subtitle {
+  font-size: 0.78rem;
+  color: #78716c;
+  margin: 0 0 0.9rem;
+}
+.transfers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.transfers-table th {
+  text-align: left;
+  padding: 6px 10px;
+  background: #fff7ed;
+  color: #7c2d12;
+  font-weight: 600;
+  border-bottom: 1px solid #fed7aa;
+}
+.transfers-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+}
+.transfers-table tr:last-child td { border-bottom: none; }
+.transfers-reason { color: #6b7280; font-size: 0.77rem; }
 
 /* ── Right panel — charts ────────────────────────────── */
 .forecast-section { margin-bottom: 1.5rem; }

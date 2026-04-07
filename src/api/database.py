@@ -5,7 +5,7 @@ Default: SQLite (zero-config). Override with DATABASE_URL env var for PostgreSQL
 """
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Date
+from sqlalchemy import create_engine, Column, Integer, Float, String, Boolean, DateTime, Date, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 from werkzeug.security import generate_password_hash
 
@@ -79,6 +79,27 @@ class DailySales(Base):
         return {
             "id":       self.id,
             "date":     str(self.date),
+            "store_id": self.store_id,
+            "item_id":  self.item_id,
+            "quantity": self.quantity,
+        }
+
+
+class StockLevel(Base):
+    __tablename__ = "stock_levels"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    store_id   = Column(Integer, nullable=False)
+    item_id    = Column(Integer, nullable=False)
+    quantity   = Column(Float,   nullable=False, default=0.0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("store_id", "item_id", name="uq_stock_store_item"),
+    )
+
+    def to_dict(self):
+        return {
             "store_id": self.store_id,
             "item_id":  self.item_id,
             "quantity": self.quantity,

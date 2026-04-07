@@ -31,8 +31,10 @@ function exportRecsCSV(recs, store) {
   const header = ['Product', 'Item ID', 'Category', 'Status', 'Current Stock',
                   '7-Day Forecast', 'Reorder Point', 'Recommended Action']
   const rows = recs.map(r => {
-    const action = r.status === 'Critical' ? `+${r.order_quantity} Order Now`
-                 : r.status === 'Watch'    ? `+${Math.round(r.order_quantity * 0.5)} Monitor`
+    const action = r.status === 'Waste Risk' ? 'Transfer Out / Promote'
+                 : r.status === 'Critical'   ? `+${r.order_quantity} Order Now`
+                 : r.status === 'Overstock'  ? 'Reduce Orders / Transfer'
+                 : r.status === 'Watch'      ? `+${Math.round(r.order_quantity * 0.5)} Monitor`
                  : 'No Action Needed'
     return [r.name, r.item, r.category, r.status,
             r.currentStock, r.forecast_7d, r.reorder_point, action]
@@ -46,14 +48,27 @@ function exportRecsCSV(recs, store) {
   URL.revokeObjectURL(url)
 }
 
-const simulateStock = (item, store, avgDaily) => {
-  const days = ((item * 17 + store * 31) % 9) + 2
-  return Math.round(avgDaily * days)
+const SHELF_LIFE = {
+  'Fresh Produce':   7,
+  'Bakery':          3,
+  'Meat & Poultry':  5,
+  'Dairy & Eggs':   14,
+  'Staples':        365,
+  'Beverages':      180,
+  'Frozen & Canned':365,
+  'Condiments':     180,
+  'Snacks & Sweets': 90,
+  'Household':      365,
 }
 
-const getStatus = (currentStock, reorderPoint) => {
-  if (currentStock < reorderPoint)        return 'Critical'
-  if (currentStock < reorderPoint * 1.5)  return 'Watch'
+
+const getStatus = (currentStock, reorderPoint, forecast7d, avgDaily, category) => {
+  const dos       = avgDaily > 0 ? currentStock / avgDaily : 999
+  const shelfLife = SHELF_LIFE[category] ?? 30
+  if (shelfLife <= 14 && dos > shelfLife) return 'Waste Risk'
+  if (currentStock < reorderPoint)         return 'Critical'
+  if (currentStock > forecast7d * 2)       return 'Overstock'
+  if (currentStock < reorderPoint * 1.5)   return 'Watch'
   return 'Healthy'
 }
 
@@ -101,6 +116,7 @@ function AppInner() {
   const [fullscreenChart, setFullscreenChart] = useState(null)  // '7d' | '30d' | null
   const [dbProducts,   setDbProducts]   = useState({})   // item_id → {name, category}
   const [todaySold,    setTodaySold]    = useState({})   // item_id → units sold today
+  const [transfers,    setTransfers]    = useState([])   // inter-store transfer suggestions
   const tableRef = useRef(null)
 
   // Fetch product list from DB on mount
@@ -122,14 +138,13 @@ function AppInner() {
     .filter(Boolean).sort())]
 
   const recs = rawRecs?.map(r => {
-    const baseStock    = simulateStock(r.item, store, r.avg_daily_demand)
     const sold         = todaySold[r.item] ?? 0
-    const currentStock = Math.max(0, baseStock - sold)
+    const currentStock = Math.max(0, (r.current_stock ?? 0) - sold)
     return {
       ...r,
       name:         itemLabel(r.item),
       currentStock,
-      status:       getStatus(currentStock, r.reorder_point),
+      status:       getStatus(currentStock, r.reorder_point, r.forecast_7d, r.avg_daily_demand, itemCat(r.item)),
       category:     itemCat(r.item),
       unit:         itemUnit(r.item),
     }
@@ -208,6 +223,9 @@ function AppInner() {
         setTodaySold(map)
       })
       .catch(() => {})
+    apiFetch(`/api/v1/transfer-suggestions?store=${store}`)
+      .then(d => setTransfers(d.suggestions ?? []))
+      .catch(() => setTransfers([]))
   }, [store, loadRecs])
 
   const handleRowClick = (item) => {
@@ -247,7 +265,7 @@ function AppInner() {
       </header>
 
       {/* ── POS tab ── */}
-      {activeTab === 'pos' && <POSPage />}
+      {activeTab === 'pos' && <POSPage onDataUpdated={() => loadRecs(store)} />}
 
       {/* ── Data Management tab ── */}
       {activeTab === 'data-management' && <DataManagement />}
@@ -314,9 +332,11 @@ function AppInner() {
             <div className="status-summary">
               <p className="filter-label" style={{ marginBottom: '0.5rem' }}>Status</p>
               {[
-                { key: 'Critical', cls: 'critical' },
-                { key: 'Watch',    cls: 'watch'    },
-                { key: 'Healthy',  cls: 'healthy'  },
+                { key: 'Waste Risk', cls: 'waste-risk' },
+                { key: 'Critical',   cls: 'critical'   },
+                { key: 'Overstock',  cls: 'overstock'  },
+                { key: 'Watch',      cls: 'watch'       },
+                { key: 'Healthy',    cls: 'healthy'     },
               ].map(({ key, cls }) => (
                 <button
                   key={key}
@@ -343,6 +363,9 @@ function AppInner() {
               Inventory Action Center
               <span className="panel-subtitle"> — Restock Actions (Next 7 Days)</span>
             </h3>
+            <button className="btn btn-ghost btn-sm" onClick={() => loadRecs(store)} title="Re-fetch stock levels">
+              ↺ Refresh
+            </button>
             {statusFilter && (
               <span className="filter-chip">
                 {statusFilter}
@@ -392,10 +415,12 @@ function AppInner() {
                         <div className="product-sku">{r.category}</div>
                       </td>
                       <td>
-                        <span className={`status-badge status-${r.status.toLowerCase()}`}>
-                          {r.status === 'Critical' && '🔴 '}
-                          {r.status === 'Watch'    && '🟡 '}
-                          {r.status === 'Healthy'  && '🟢 '}
+                        <span className={`status-badge status-${r.status.toLowerCase().replace(' ', '-')}`}>
+                          {r.status === 'Waste Risk' && '🟠 '}
+                          {r.status === 'Critical'   && '🔴 '}
+                          {r.status === 'Overstock'  && '🟡 '}
+                          {r.status === 'Watch'      && '🟡 '}
+                          {r.status === 'Healthy'    && '🟢 '}
                           {r.status}
                         </span>
                       </td>
@@ -403,8 +428,14 @@ function AppInner() {
                       <td>{r.forecast_7d} {r.unit}</td>
                       <td>{r.reorder_point} {r.unit}</td>
                       <td>
+                        {r.status === 'Waste Risk' && (
+                          <span className="action-btn action-waste-risk">Transfer Out / Promote</span>
+                        )}
                         {r.status === 'Critical' && (
                           <span className="action-btn action-critical">+{r.order_quantity} Order Now</span>
+                        )}
+                        {r.status === 'Overstock' && (
+                          <span className="action-btn action-overstock">Reduce Orders / Transfer</span>
                         )}
                         {r.status === 'Watch' && (
                           <span className="action-btn action-watch">+{Math.round(r.order_quantity * 0.5)} Monitor</span>
@@ -420,6 +451,36 @@ function AppInner() {
             </div>
           )}
         </main>
+
+        {/* TRANSFER SUGGESTIONS — below main, spans full width if present */}
+        {transfers.length > 0 && (
+          <div className="transfers-panel">
+            <h3 className="transfers-title">🔄 Inter-Store Transfer Suggestions</h3>
+            <p className="transfers-subtitle">
+              These products are overstocked in Store #{store}. Transferring them reduces waste and fills gaps elsewhere.
+            </p>
+            <table className="transfers-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Transfer To</th>
+                  <th>Qty</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transfers.map((t, i) => (
+                  <tr key={i}>
+                    <td><strong>{itemLabel(t.item)}</strong></td>
+                    <td>Store #{t.to_store}</td>
+                    <td>{t.transfer_qty} {itemUnit(t.item)}</td>
+                    <td className="transfers-reason">{t.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* RIGHT — Demand charts */}
         <aside className="panel panel-right">
@@ -481,7 +542,7 @@ function AppInner() {
               <div className="chart-modal-header">
                 <div>
                   <h3 className="chart-modal-title">
-                    {fullscreenChart === '7d' ? '📈 7-Day Tactical Forecast' : '📅 30-Day Strategic View'}
+                    {fullscreenChart === '7d' ? '7-Day Tactical Forecast' : '30-Day Strategic View'}
                   </h3>
                   <span className="chart-subtitle">{itemLabel(selectedItem)} — Store #{store}</span>
                 </div>

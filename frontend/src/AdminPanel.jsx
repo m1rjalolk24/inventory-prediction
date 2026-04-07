@@ -203,24 +203,7 @@ export default function AdminPanel({ activeModel, onModelChange }) {
   const [metricsErr, setMetricsErr]   = useState(null)
   const [health, setHealth]           = useState(null)
   const [dataInfo, setDataInfo]       = useState(null)
-  const [ingestResult, setIngestResult] = useState(null)
-  const [ingestLoading, setIngestLoading] = useState(false)
   const retrain = useRetrain()
-
-  const runIngest = async () => {
-    setIngestLoading(true)
-    setIngestResult(null)
-    try {
-      const res  = await fetch('/api/v1/jobs/ingest', { method: 'POST', headers: authHeaders() })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setIngestResult({ ok: true, ...data })
-    } catch (e) {
-      setIngestResult({ ok: false, message: e.message })
-    } finally {
-      setIngestLoading(false)
-    }
-  }
 
   useEffect(() => {
     fetch('/health')
@@ -328,32 +311,6 @@ export default function AdminPanel({ activeModel, onModelChange }) {
       <div className="admin-card admin-card-full">
         <h3 className="admin-card-title">Operations</h3>
         <div className="ops-row">
-
-          {/* Daily Ingest */}
-          <div className="ops-item">
-            <div className="ops-item-info">
-              <div className="ops-item-title">Run Daily Ingestion</div>
-              <div className="ops-item-desc">
-                Simulates one new day of sales for all stores and items, appends to training data, and clears the forecast cache.
-              </div>
-              {ingestResult && (
-                <div className={ingestResult.ok ? 'ops-result ops-result-ok' : 'ops-result ops-result-err'}>
-                  {ingestResult.ok
-                    ? `✓ ${ingestResult.message} · ${ingestResult.total_rows?.toLocaleString()} total rows`
-                    : `✗ ${ingestResult.message}`}
-                </div>
-              )}
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={runIngest}
-              disabled={ingestLoading}
-            >
-              {ingestLoading ? 'Running…' : '▶ Run Ingestion'}
-            </button>
-          </div>
-
-          <div className="ops-divider" />
 
           {/* Retrain */}
           <div className="ops-item">
