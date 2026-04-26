@@ -179,6 +179,8 @@ function useRetrain() {
         setStatus(data)
         if (data.state === 'running') {
           pollRef.current = setTimeout(pollStatus, 2000)
+        } else if (data.state === 'done') {
+          pollRef.current = setTimeout(() => setStatus(null), 8000)
         }
       })
       .catch(() => {})

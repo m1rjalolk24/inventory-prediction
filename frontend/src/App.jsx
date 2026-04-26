@@ -116,7 +116,11 @@ function AppInner() {
   const [fullscreenChart, setFullscreenChart] = useState(null)  // '7d' | '30d' | null
   const [dbProducts,   setDbProducts]   = useState({})   // item_id → {name, category}
   const [todaySold,    setTodaySold]    = useState({})   // item_id → units sold today
-  const [transfers,    setTransfers]    = useState([])   // inter-store transfer suggestions
+  const [transfers,      setTransfers]      = useState([])   // inter-store transfer suggestions
+  const [transfersError, setTransfersError] = useState(null)
+  const [forecastError,  setForecastError]  = useState(null)
+  const [markFlash,      setMarkFlash]      = useState(null)
+  const [receivingItem,  setReceivingItem]  = useState(null)
   const tableRef = useRef(null)
 
   // Fetch product list from DB on mount
@@ -187,6 +191,7 @@ function AppInner() {
     setFcastLoading(true)
     setForecast7(null)
     setForecast30(null)
+    setForecastError(null)
     try {
       const [d7, d30] = await Promise.all([
         apiFetch('/api/v1/forecast', {
@@ -209,7 +214,7 @@ function AppInner() {
           band:     Math.round(d.forecast * 0.30),
         }))
       )
-    } catch (_) {}
+    } catch (e) { setForecastError(e.message) }
     finally { setFcastLoading(false) }
   }, [activeModel])
 
@@ -224,8 +229,8 @@ function AppInner() {
       })
       .catch(() => {})
     apiFetch(`/api/v1/transfer-suggestions?store=${store}`)
-      .then(d => setTransfers(d.suggestions ?? []))
-      .catch(() => setTransfers([]))
+      .then(d => { setTransfers(d.suggestions ?? []); setTransfersError(null) })
+      .catch(() => { setTransfers([]); setTransfersError('Unable to load transfer suggestions') })
   }, [store, loadRecs])
 
   const handleRowClick = (item) => {
@@ -234,15 +239,20 @@ function AppInner() {
   }
 
   const handleMarkReceived = async (itemId, qty) => {
+    setReceivingItem(itemId)
     try {
       await apiFetch('/api/v1/stock/receive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ store_id: store, item_id: itemId, quantity: qty }),
       })
+      setMarkFlash('✓ Stock updated')
+      setTimeout(() => setMarkFlash(null), 3000)
       loadRecs(store)
     } catch (e) {
       console.error('Receive failed', e)
+    } finally {
+      setReceivingItem(null)
     }
   }
 
@@ -315,7 +325,7 @@ function AppInner() {
               value={store}
               onChange={e => { setStore(+e.target.value); setStatusFilter(null) }}
             >
-              {STORES.map(s => <option key={s} value={s}>#{s} — Store {s}</option>)}
+              {STORES.map(s => <option key={s} value={s}>Store #{s}</option>)}
             </select>
           </div>
 
@@ -376,8 +386,9 @@ function AppInner() {
               Inventory Action Center
               <span className="panel-subtitle"> — Restock Actions (Next 7 Days)</span>
             </h3>
-            <button className="btn btn-ghost btn-sm" onClick={() => loadRecs(store)} title="Re-fetch stock levels">
-              ↺ Refresh
+            <button className="btn btn-ghost btn-sm" onClick={() => loadRecs(store)}
+              disabled={recsLoading} title="Re-fetch stock levels">
+              {recsLoading ? '↺ Refreshing…' : '↺ Refresh'}
             </button>
             {statusFilter && (
               <span className="filter-chip">
@@ -396,10 +407,16 @@ function AppInner() {
 
           {recsLoading && (
             <div className="info-box" style={{ marginTop: '1rem' }}>
-              Loading recommendations… (first request ~30 s while features build)
+              Loading recommendations… (may take up to 30 seconds on first load)
             </div>
           )}
           {recsError && <div className="error-box" style={{ marginTop: '1rem' }}>Error: {recsError}</div>}
+
+          {markFlash && (
+            <div className="upload-success" style={{ marginTop: '0.75rem', padding: '0.6rem 0.9rem' }}>
+              <span className="upload-success-icon">✓</span>{markFlash}
+            </div>
+          )}
 
           {filteredRecs && (
             <div className="table-wrap">
@@ -447,8 +464,9 @@ function AppInner() {
                         {r.status === 'Critical' && (
                           <button className="action-btn action-critical"
                             onClick={e => { e.stopPropagation(); handleMarkReceived(r.item, r.order_quantity) }}
+                            disabled={receivingItem === r.item}
                             title="Mark order as received — adds stock">
-                            +{r.order_quantity} {r.unit} · Mark Received
+                            {receivingItem === r.item ? 'Saving…' : `+${r.order_quantity} ${r.unit} · Mark Received`}
                           </button>
                         )}
                         {r.status === 'Overstock' && (
@@ -457,8 +475,9 @@ function AppInner() {
                         {r.status === 'Watch' && (
                           <button className="action-btn action-watch"
                             onClick={e => { e.stopPropagation(); handleMarkReceived(r.item, Math.round(r.order_quantity * 0.5)) }}
+                            disabled={receivingItem === r.item}
                             title="Mark partial order as received">
-                            +{Math.round(r.order_quantity * 0.5)} {r.unit} · Mark Received
+                            {receivingItem === r.item ? 'Saving…' : `+${Math.round(r.order_quantity * 0.5)} ${r.unit} · Mark Received`}
                           </button>
                         )}
                         {r.status === 'Healthy' && (
@@ -474,6 +493,9 @@ function AppInner() {
         </main>
 
         {/* TRANSFER SUGGESTIONS — below main, spans full width if present */}
+        {transfersError && (
+          <div className="error-box" style={{ margin: '0.5rem 1rem' }}>{transfersError}</div>
+        )}
         {transfers.length > 0 && (
           <div className="transfers-panel">
             <h3 className="transfers-title">🔄 Inter-Store Transfer Suggestions</h3>
@@ -513,6 +535,10 @@ function AppInner() {
 
           {fcastLoading && <div className="info-box">Loading forecast…</div>}
 
+          {!fcastLoading && forecastError && (
+            <div className="error-box">Failed to load forecast: {forecastError}</div>
+          )}
+
           {!fcastLoading && forecast7 && (
             <div className="forecast-section">
               <h4 className="chart-title">
@@ -546,18 +572,18 @@ function AppInner() {
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`]} />
                   <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="transparent" />
-                  <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±15% band" />
+                  <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±30% band" />
                   <Line type="monotone" dataKey="forecast" name="Forecast"
                     stroke="#6366f1" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-              <p className="chart-note">Shaded area shows ±15% forecast confidence band.</p>
+              <p className="chart-note">Shaded area shows ±30% forecast confidence band.</p>
             </div>
           )}
         </aside>
 
         {/* Fullscreen chart modal */}
-        {fullscreenChart && forecast7 && (
+        {fullscreenChart && (forecast7 || forecast30) && (
           <div className="modal-backdrop" onClick={() => setFullscreenChart(null)}>
             <div className="chart-modal" onClick={e => e.stopPropagation()}>
               <div className="chart-modal-header">
@@ -588,7 +614,7 @@ function AppInner() {
                       <YAxis tick={{ fontSize: 12 }} />
                       <Tooltip formatter={v => [`${v} ${itemUnit(selectedItem)}`]} />
                       <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="transparent" />
-                      <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±15% band" />
+                      <Area type="monotone" dataKey="band"  stackId="band" stroke="none" fill="#e0e7ff" name="±30% band" />
                       <Line type="monotone" dataKey="forecast" name="Forecast"
                         stroke="#6366f1" strokeWidth={3} dot={false} />
                     </ComposedChart>
@@ -603,7 +629,7 @@ function AppInner() {
                     const peak    = forecast7[vals.indexOf(Math.max(...vals))]
                     const low     = forecast7[vals.indexOf(Math.min(...vals))]
                     const trend   = vals[vals.length - 1] > vals[0] ? 'upward' : 'downward'
-                    const trendPct = Math.abs(Math.round(((vals[vals.length-1] - vals[0]) / vals[0]) * 100))
+                    const trendPct = vals[0] === 0 ? 0 : Math.abs(Math.round(((vals[vals.length-1] - vals[0]) / vals[0]) * 100))
                     return (
                       <div className="insights-grid">
                         <div className="insight-card">
@@ -664,7 +690,7 @@ function AppInner() {
                           <div className="insight-text">
                             <strong>Interpretation:</strong> Over the next 30 days, demand shows an <strong>{trend}</strong> trend
                             with a total forecasted volume of <strong>{total} {itemUnit(selectedItem)}</strong>.
-                            The confidence band (±15%) suggests ordering between <strong>{minLower}</strong> and <strong>{maxUpper}</strong> {itemUnit(selectedItem)}
+                            The confidence band (±30%) suggests ordering between <strong>{minLower}</strong> and <strong>{maxUpper}</strong> {itemUnit(selectedItem)}
                             per day to maintain optimal stock levels.
                           </div>
                         </div>

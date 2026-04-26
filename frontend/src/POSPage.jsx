@@ -218,11 +218,12 @@ function SalesUpload({ onDataUpdated }) {
 }
 
 export default function POSPage({ onDataUpdated }) {
-  const [store,     setStore]     = useState(1)
-  const [itemId,    setItemId]    = useState('')
-  const [quantity,  setQuantity]  = useState(1)
-  const [products,  setProducts]  = useState([])
-  const [todayLog,  setTodayLog]  = useState([])
+  const [store,         setStore]         = useState(1)
+  const [itemId,        setItemId]        = useState('')
+  const [quantity,      setQuantity]      = useState(1)
+  const [products,      setProducts]      = useState([])
+  const [productsError, setProductsError] = useState(null)
+  const [todayLog,      setTodayLog]      = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [flash,     setFlash]     = useState(null)   // { type: 'ok'|'err', msg }
   const [posTab,    setPosTab]    = useState('sale') // 'sale' | 'receive'
@@ -235,7 +236,7 @@ export default function POSPage({ onDataUpdated }) {
         setProducts(active)
         if (active.length) setItemId(active[0].item_id)
       })
-      .catch(() => {})
+      .catch(() => setProductsError('Could not load products — check your connection'))
   }, [])
 
   const fetchLog = () => {
@@ -333,7 +334,7 @@ export default function POSPage({ onDataUpdated }) {
               <label className="filter-label">Store</label>
               <select className="filter-select" value={store}
                 onChange={e => { setStore(+e.target.value); setFlash(null) }}>
-                {STORES.map(s => <option key={s} value={s}>#{s} — Store {s}</option>)}
+                {STORES.map(s => <option key={s} value={s}>Store #{s}</option>)}
               </select>
             </div>
 
@@ -347,6 +348,7 @@ export default function POSPage({ onDataUpdated }) {
                   </option>
                 ))}
               </select>
+              {productsError && <p className="chart-note" style={{ color: '#dc2626', marginTop: '0.25rem' }}>{productsError}</p>}
             </div>
 
             <div className="form-group">
