@@ -101,7 +101,6 @@ function AppInner() {
   if (loading) return null
   if (!user)   return <LoginPage />
   const [activeTab,    setActiveTab]    = useState('dashboard')
-  const [activeModel,  setActiveModel]  = useState('random_forest')
   const [store,        setStore]        = useState(1)
   const [category,     setCategory]     = useState('All')
   const [search,       setSearch]       = useState('')
@@ -197,12 +196,12 @@ function AppInner() {
         apiFetch('/api/v1/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store: s, item, horizon_days: 7,  model: activeModel }),
+          body: JSON.stringify({ store: s, item, horizon_days: 7,  model: 'random_forest' }),
         }),
         apiFetch('/api/v1/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store: s, item, horizon_days: 30, model: activeModel }),
+          body: JSON.stringify({ store: s, item, horizon_days: 30, model: 'random_forest' }),
         }),
       ])
       setForecast7(d7.forecast)
@@ -216,7 +215,7 @@ function AppInner() {
       )
     } catch (e) { setForecastError(e.message) }
     finally { setFcastLoading(false) }
-  }, [activeModel])
+  }, [])
 
   useEffect(() => {
     loadRecs(store)
@@ -295,7 +294,7 @@ function AppInner() {
 
       {/* ── Admin Panel tab ── */}
       {activeTab === 'admin' && (
-        <AdminPanel activeModel={activeModel} onModelChange={setActiveModel} />
+        <AdminPanel />
       )}
 
       {activeTab === 'dashboard' && <>

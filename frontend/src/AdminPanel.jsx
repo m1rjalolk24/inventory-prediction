@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { authHeaders, useAuth } from './AuthContext'
 
 const EMPTY_USER = { username: '', password: '', role: 'planner' }
@@ -144,12 +144,6 @@ function UsersPanel() {
   )
 }
 
-const MODELS = [
-  { id: 'random_forest',      label: 'Random Forest',      desc: 'Best overall accuracy — recommended',               disabled: false },
-  { id: 'linear_regression',  label: 'Linear Regression',  desc: 'Baseline — fast, interpretable',                    disabled: false },
-  { id: 'arima',              label: 'ARIMA',              desc: 'Notebook only — not available for live serving',     disabled: true  },
-]
-
 const METRIC_LABELS = {
   MAPE: { label: 'MAPE',  unit: '%',  good: v => v < 15, fmt: v => v.toFixed(2) },
   RMSE: { label: 'RMSE',  unit: '',   good: v => v < 10, fmt: v => v.toFixed(2) },
@@ -167,45 +161,11 @@ function normalizeMetrics(raw) {
   return out
 }
 
-function useRetrain() {
-  const [status,   setStatus]   = useState(null)   // retrain status object
-  const [confirm,  setConfirm]  = useState(false)
-  const pollRef = useRef(null)
-
-  const pollStatus = useCallback(() => {
-    fetch('/api/v1/jobs/retrain/status', { headers: authHeaders() })
-      .then(r => r.json())
-      .then(data => {
-        setStatus(data)
-        if (data.state === 'running') {
-          pollRef.current = setTimeout(pollStatus, 2000)
-        } else if (data.state === 'done') {
-          pollRef.current = setTimeout(() => setStatus(null), 8000)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  const startRetrain = async () => {
-    setConfirm(false)
-    const res  = await fetch('/api/v1/jobs/retrain', { method: 'POST', headers: authHeaders() })
-    const data = await res.json()
-    if (!res.ok) { setStatus({ state: 'error', message: data.error }); return }
-    setStatus(data.status)
-    pollRef.current = setTimeout(pollStatus, 2000)
-  }
-
-  useEffect(() => () => clearTimeout(pollRef.current), [])
-
-  return { status, confirm, setConfirm, startRetrain }
-}
-
-export default function AdminPanel({ activeModel, onModelChange }) {
+export default function AdminPanel() {
   const [metrics, setMetrics]         = useState(null)
   const [metricsErr, setMetricsErr]   = useState(null)
   const [health, setHealth]           = useState(null)
   const [dataInfo, setDataInfo]       = useState(null)
-  const retrain = useRetrain()
 
   useEffect(() => {
     fetch('/health')
@@ -236,20 +196,11 @@ export default function AdminPanel({ activeModel, onModelChange }) {
       .catch(() => {})
   }, [])
 
-  const bestModel = metrics
-    ? Object.entries(metrics).sort((a, b) =>
-        (a[1].MAPE ?? 999) - (b[1].MAPE ?? 999)
-      )[0]?.[0]
-    : null
-
   return (
     <div className="admin-page">
 
-      {/* ── Row 1: Status + Active Model ── */}
-      <div className="admin-row">
-
-        {/* System Status */}
-        <div className="admin-card">
+      {/* ── System Status ── */}
+      <div className="admin-card">
           <h3 className="admin-card-title">System Status</h3>
           <div className="status-rows">
             <div className="status-row">
@@ -273,104 +224,9 @@ export default function AdminPanel({ activeModel, onModelChange }) {
               </div>
             </>}
           </div>
-        </div>
-
-        {/* Active Model Selector */}
-        <div className="admin-card">
-          <h3 className="admin-card-title">Active Forecast Model</h3>
-          <p className="admin-card-sub">Used for all Dashboard forecasts and recommendations.</p>
-          <div className="model-options">
-            {MODELS.map(m => (
-              <label
-                key={m.id}
-                className={`model-option ${activeModel === m.id ? 'model-option-active' : ''} ${m.disabled ? 'model-option-disabled' : ''}`}
-                title={m.disabled ? 'Notebook only — not available for live serving' : undefined}
-              >
-                <input
-                  type="radio"
-                  name="activeModel"
-                  value={m.id}
-                  checked={activeModel === m.id}
-                  disabled={m.disabled}
-                  onChange={() => !m.disabled && onModelChange(m.id)}
-                />
-                <div className="model-option-body">
-                  <div className="model-option-name">
-                    {m.label}
-                    {bestModel === m.id && <span className="model-best-tag">Best</span>}
-                    {m.disabled && <span className="model-disabled-tag">Offline only</span>}
-                  </div>
-                  <div className="model-option-desc">{m.desc}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-
       </div>
 
-      {/* ── Row 2: Operations ── */}
-      <div className="admin-card admin-card-full">
-        <h3 className="admin-card-title">Operations</h3>
-        <div className="ops-row">
-
-          {/* Retrain */}
-          <div className="ops-item">
-            <div className="ops-item-info">
-              <div className="ops-item-title">Retrain Forecast Model</div>
-              <div className="ops-item-desc">
-                Retrains Random Forest on all available data. Takes 2–5 minutes.
-                Forecasts will be unavailable during training.
-              </div>
-              {retrain.status && retrain.status.state !== 'idle' && (
-                <div className={`ops-result ${
-                  retrain.status.state === 'done'    ? 'ops-result-ok'  :
-                  retrain.status.state === 'error'   ? 'ops-result-err' :
-                  'ops-result-running'}`}>
-                  {retrain.status.state === 'running' && <span className="ops-spinner" />}
-                  {retrain.status.message}
-                </div>
-              )}
-            </div>
-            <button
-              className="btn btn-warning"
-              onClick={() => retrain.setConfirm(true)}
-              disabled={retrain.status?.state === 'running'}
-            >
-              {retrain.status?.state === 'running' ? 'Training…' : '⟳ Retrain Model'}
-            </button>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Retrain confirmation modal */}
-      {retrain.confirm && (
-        <div className="modal-backdrop" onClick={() => retrain.setConfirm(false)}>
-          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Retrain Model?</h3>
-              <button className="modal-close" onClick={() => retrain.setConfirm(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p style={{ color: '#374151', marginBottom: '0.75rem' }}>
-                Retraining takes <strong>2–5 minutes</strong>. During this time:
-              </p>
-              <ul className="retrain-warning-list">
-                <li>Forecast requests will fail with a 503 error</li>
-                <li>Recommendations will be unavailable</li>
-                <li>The new model replaces the current one automatically when done</li>
-              </ul>
-              <div className="modal-footer" style={{ marginTop: '1.25rem' }}>
-                <button className="btn btn-ghost" onClick={() => retrain.setConfirm(false)}>Cancel</button>
-                <button className="btn btn-warning" onClick={retrain.startRetrain}>Start Retraining</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Row 3: Metrics Table ── */}
+      {/* ── Metrics Table ── */}
       <div className="admin-card admin-card-full">
         <h3 className="admin-card-title">Model Performance Metrics</h3>
         <p className="admin-card-sub">Evaluated on the held-out test set (last 3 months of data).</p>
@@ -394,12 +250,12 @@ export default function AdminPanel({ activeModel, onModelChange }) {
               </thead>
               <tbody>
                 {Object.entries(metrics).map(([model, vals]) => (
-                  <tr key={model} className={model === activeModel ? 'metrics-row-active' : ''}>
+                  <tr key={model} className={model === 'random_forest' ? 'metrics-row-active' : ''}>
                     <td>
                       <span className="metrics-model-name">
                         {model.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                       </span>
-                      {model === activeModel && <span className="model-active-tag">Active</span>}
+                      {model === 'random_forest' && <span className="model-active-tag">Active</span>}
                     </td>
                     {Object.entries(METRIC_LABELS).map(([key, meta]) => {
                       const val = vals[key]
