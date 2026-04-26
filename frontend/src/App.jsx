@@ -310,6 +310,39 @@ function AppInner() {
         </div>
       )}
 
+      {/* ── Transfer Suggestions — above the table grid ── */}
+      {transfersError && (
+        <div className="error-box" style={{ margin: '0 1rem 0.75rem' }}>{transfersError}</div>
+      )}
+      {transfers.length > 0 && (
+        <div className="transfers-panel">
+          <h3 className="transfers-title">🔄 Inter-Store Transfer Suggestions</h3>
+          <p className="transfers-subtitle">
+            These products are overstocked in Store #{store}. Transferring them reduces waste and fills gaps elsewhere.
+          </p>
+          <table className="transfers-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Transfer To</th>
+                <th>Qty</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transfers.map((t, i) => (
+                <tr key={i}>
+                  <td><strong>{itemLabel(t.item)}</strong></td>
+                  <td>Store #{t.to_store}</td>
+                  <td>{t.transfer_qty} {itemUnit(t.item)}</td>
+                  <td className="transfers-reason">{t.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* ── Three-column layout ── */}
       <div className="layout">
 
@@ -490,39 +523,6 @@ function AppInner() {
             </div>
           )}
         </main>
-
-        {/* TRANSFER SUGGESTIONS — below main, spans full width if present */}
-        {transfersError && (
-          <div className="error-box" style={{ margin: '0.5rem 1rem' }}>{transfersError}</div>
-        )}
-        {transfers.length > 0 && (
-          <div className="transfers-panel">
-            <h3 className="transfers-title">🔄 Inter-Store Transfer Suggestions</h3>
-            <p className="transfers-subtitle">
-              These products are overstocked in Store #{store}. Transferring them reduces waste and fills gaps elsewhere.
-            </p>
-            <table className="transfers-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Transfer To</th>
-                  <th>Qty</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transfers.map((t, i) => (
-                  <tr key={i}>
-                    <td><strong>{itemLabel(t.item)}</strong></td>
-                    <td>Store #{t.to_store}</td>
-                    <td>{t.transfer_qty} {itemUnit(t.item)}</td>
-                    <td className="transfers-reason">{t.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
 
         {/* RIGHT — Demand charts */}
         <aside className="panel panel-right">
